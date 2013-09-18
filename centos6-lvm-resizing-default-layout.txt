@@ -1,0 +1,23 @@
+resizing centos 6.4 default LVM layout steps
+
+default layout below:
+
+	$ df -h
+	Filesystem                  Size  Used Avail Use% Mounted on
+	/dev/mapper/vg_repo-lv_root 148G  113G   29G  80% /
+	tmpfs                       499M     0  499M   0% /dev/shm
+	/dev/sda1                   485M  156M  304M  34% /boot
+	/dev/mapper/vg_repo-lv_home 47G  181M   45G   1%  /home
+
+To remove the logical volume that stores /home and add the free space to the root partition, follow these steps:
+
+Note: boot into single usermod
+1	cd /
+2	cp -Ra /home /home.bak  # Make a backup of home
+3	umount /home
+4	lvm lvremove /dev/vg_<hostname>/lv_home  # Remove the logical volume for home
+5	lvm lvresize -l+100%FREE /dev/vg_<hostname>/lv_root  # Resize the root logical volume so it uses 100% of the now free space
+6	resize2fs /dev/vg_<hostname>/lv_root  # Resize the filesystem to use the whole logical volume
+7       remove the /home entry in /etc/fstab
+8       rm -rf /home to remove the directory
+9	mv /home.bak /home  # Restore the backup.up.
