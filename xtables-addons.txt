@@ -1,4 +1,4 @@
-tricks to compile/run xtables-addons on Centos64 running mainline git kernel
+tricks to compile/run xtables-addons on ubuntu running mainline git kernel
 
 1, comment out LINUX_VERSION_CODE check (the diff also include excluding xt_ECHO to echo multicast/broadcast udp packet)
 
@@ -77,3 +77,10 @@ index 4c31c51..c74cb8f 100644
 4 add xt_ECHO in /etc/modules for example
 
 5 reboot
+
+
+above workaround is when having xtables-addons compiling error due to LINUX_VERSION_CODE (version.h) mismatch
+http://www.spinics.net/lists/netfilter-devel/msg29169.html
+
+it may be caused by when i am rsyncing linux source to the build box and somehow the version.h messed up, to avoid
+above compiling error, scp clean linux git source to the build box, that should avoid the compiling error
