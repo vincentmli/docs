@@ -1,0 +1,31 @@
+installation steps to prepare ruby for f5 icontrol ruby class
+
+curl -L https://get.rvm.io | bash -s stable --ruby
+
+source /usr/local/rvm/scripts/rvm
+
+rvm install 1.9.2
+
+rvm list <====to list which ruby version available to use
+
+rvm use 1.9.2
+
+ruby -v
+
+which ruby
+
+which gem
+
+unzip f5-icontrol-11.3-gem.zip
+
+gem install f5-icontrol-11.3.0.0.gem
+
+gem install soap4r-ruby1.9
+
+
+root@vincent-desktop:/home/vincent# ./dns-icontrol-issue.rb
+./dns-icontrol-issue.rb:54:in `<main>': Invalid IP address passed (ArgumentError)
+
+Usage: dns-icontrol-issue.rb <ip>, ie:
+ ./dns-icontrol-issue.rb 10.10.10.10
+

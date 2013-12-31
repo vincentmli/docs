@@ -1,0 +1,86 @@
+tricks to compile/run xtables-addons on ubuntu running mainline git kernel
+
+1, comment out LINUX_VERSION_CODE check (the diff also include excluding xt_ECHO to echo multicast/broadcast udp packet)
+
+diff --git a/extensions/compat_xtables.h b/extensions/compat_xtables.h
+index 64ba479..ca8809f 100644
+--- a/extensions/compat_xtables.h
++++ b/extensions/compat_xtables.h
+@@ -2,15 +2,17 @@
+ #define _XTABLES_COMPAT_H 1
+
+ #include <linux/kernel.h>
+-#include <linux/version.h>
++#include </home/vincent/linux/include/linux/version.h>
+ #include "compat_skbuff.h"
+ #include "compat_xtnu.h"
+
+ #define DEBUGP Use__pr_debug__instead
+
++/*
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 7, 0)
+ #      warning Kernels below 3.7 not supported.
+ #endif
++*/
+
+ #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+ #      if !defined(CONFIG_NF_CONNTRACK_MARK)
+@@ -55,6 +57,8 @@
+
+ #define xt_request_find_match xtnu_request_find_match
+
++/*
++
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 9, 0)
+ static inline struct inode *file_inode(struct file *f)
+ {
+@@ -82,4 +86,6 @@ static inline void proc_remove(struct proc_dir_entry *de)
+ }
+ #endif
+
++*/
++
+ #endif /* _XTABLES_COMPAT_H */
+diff --git a/extensions/xt_CHAOS.c b/extensions/xt_CHAOS.c
+index 28544d0..469c8a6 100644
+--- a/extensions/xt_CHAOS.c
++++ b/extensions/xt_CHAOS.c
+@@ -21,7 +21,7 @@
+ #include "xt_CHAOS.h"
+ static struct xt_match *xm_tcp;
+ static struct xt_target *xt_delude, *xt_reject, *xt_tarpit;
+-#include "compat_xtables.h"
++#include "compat_xtables.h"
+ #define PFX KBUILD_MODNAME ": "
+
+ /* Module parameters */
+diff --git a/extensions/xt_ECHO.c b/extensions/xt_ECHO.c
+index 4c31c51..c74cb8f 100644
+--- a/extensions/xt_ECHO.c
++++ b/extensions/xt_ECHO.c
+@@ -136,6 +136,9 @@ echo_tg4(struct sk_buff **poldskb, const struct xt_action_param *par)
+        /* This allows us to do the copy operation in fewer lines of code. */
+        if (skb_linearize(*poldskb) < 0)
+                return NF_DROP;
++        if (oldskb->pkt_type == PACKET_MULTICAST ||
++               oldskb->pkt_type == PACKET_BROADCAST)
++                return NF_DROP;
+
+        oldip  = ip_hdr(oldskb);
+        oldudp = skb_header_pointer(oldskb, par->thoff,
+
+
+2, ./configure; make; make install
+
+3, depmod
+
+4 add xt_ECHO in /etc/modules for example
+
+5 reboot
+
+
+above workaround is when having xtables-addons compiling error due to LINUX_VERSION_CODE (version.h) mismatch
+http://www.spinics.net/lists/netfilter-devel/msg29169.html
+
+it may be caused by when i am rsyncing linux source to the build box and somehow the version.h messed up, to avoid
+above compiling error, scp clean linux git source to the build box, that should avoid the compiling error

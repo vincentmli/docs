@@ -1,0 +1,4 @@
+Linux kernel does not support userspace code (iproute2 for example) to add ip address as secondary or primary.
+it solely depending on the order of ip addresses being add on the interface ( when using same ip range, netmask)
+
+https://lkml.org/lkml/2013/9/25/41
