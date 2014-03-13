@@ -1,0 +1,445 @@
+I have always wondered what is process of sending SYN packet to create tcp connection in kernel
+well, I think I have good grasp it now. it is in  net/ipv4/tcp_ipv4.c tcp_v4_connect, this is
+result of trouble shooting kernel selecting wrong source ip 127.0.0.1 issue. here is the code path:
+
+--centos6.2 kernel 2.6.32
+
+
+when user space program calls socket connect function, it invokes system call connect and that is where kernel space code kicks in
+
+let's see how connect system call is defined in kernel:
+
+net/socket.c
+
+
+1580 /*
+1581  *      Attempt to connect to a socket with the server address.  The address
+1582  *      is in user space so we verify it is OK and move it to kernel space.
+1583  *
+1584  *      For 1003.1g we need to add clean support for a bind to AF_UNSPEC to
+1585  *      break bindings
+1586  *
+1587  *      NOTE: 1003.1g draft 6.3 is broken with respect to AX.25/NetROM and
+1588  *      other SEQPACKET protocols that take time to connect() as it doesn't
+1589  *      include the -EINPROGRESS status for such sockets.
+1590  */
+1591
+1592 SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
+1593                 int, addrlen)
+1594 {
+1595         struct socket *sock;
+1596         struct sockaddr_storage address;
+1597         int err, fput_needed;
+1598
+1599         sock = sockfd_lookup_light(fd, &err, &fput_needed);
+1600         if (!sock)
+1601                 goto out;
+1602         err = move_addr_to_kernel(uservaddr, addrlen, (struct sockaddr *)&address);
+1603         if (err < 0)
+1604                 goto out_put;
+1605
+1606         err =
+1607             security_socket_connect(sock, (struct sockaddr *)&address, addrlen);
+1608         if (err)
+1609                 goto out_put;
+1610
+1611         err = sock->ops->connect(sock, (struct sockaddr *)&address, addrlen,
+1612                                  sock->file->f_flags); //<---here it invokes the socket protocol specific socket operations connect function
+1613 out_put:
+1614         fput_light(sock->file, fput_needed);
+1615 out:
+1616         return err;
+1617 }
+
+we are talking about tcp protocol here, so there is the tcp protocol operation defined:
+
+net/ipv4/af_inet.c
+
+ 874 const struct proto_ops inet_stream_ops = {
+ 875         .family            = PF_INET,
+ 876         .owner             = THIS_MODULE,
+ 877         .release           = inet_release,
+ 878         .bind              = inet_bind,
+ 879         .connect           = inet_stream_connect, <----------------
+ 880         .socketpair        = sock_no_socketpair,
+ 881         .accept            = inet_accept,
+ 882         .getname           = inet_getname,
+ 883         .poll              = tcp_poll,
+ 884         .ioctl             = inet_ioctl,
+ 885         .listen            = inet_listen,
+ 886         .shutdown          = inet_shutdown,
+ 887         .setsockopt        = sock_common_setsockopt,
+ 888         .getsockopt        = sock_common_getsockopt,
+ 889         .sendmsg           = tcp_sendmsg,
+ 890         .recvmsg           = inet_recvmsg,
+ 891         .mmap              = sock_no_mmap,
+ 892         .sendpage          = tcp_sendpage,
+ 893         .splice_read       = tcp_splice_read,
+ 894 #ifdef CONFIG_COMPAT
+ 895         .compat_setsockopt = compat_sock_common_setsockopt,
+ 896         .compat_getsockopt = compat_sock_common_getsockopt,
+ 897 #endif
+ 898 };
+ 899 EXPORT_SYMBOL(inet_stream_ops);
+
+
+let's see inet_stream_connect 
+
+
+net/ipv4/af_inet.c
+
+ 567 /*
+ 568  *      Connect to a remote host. There is regrettably still a little
+ 569  *      TCP 'magic' in here.
+ 570  */
+ 571 int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
+ 572                         int addr_len, int flags)
+ 573 {
+ 574         struct sock *sk = sock->sk;
+ 575         int err;
+ 576         long timeo;
+ 577
+ 578         lock_sock(sk);
+ 579
+ 580         if (uaddr->sa_family == AF_UNSPEC) {
+ 581                 err = sk->sk_prot->disconnect(sk, flags);
+ 582                 sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
+ 583                 goto out;
+ 584         }
+ 585
+ 586         switch (sock->state) {
+ 587         default:
+ 588                 err = -EINVAL;
+ 589                 goto out;
+ 590         case SS_CONNECTED:
+ 591                 err = -EISCONN;
+ 592                 goto out;
+ 593         case SS_CONNECTING:
+ 594                 err = -EALREADY;
+ 595                 /* Fall out of switch with err, set for this state */
+ 596                 break;
+ 597         case SS_UNCONNECTED:
+ 598                 err = -EISCONN;
+ 599                 if (sk->sk_state != TCP_CLOSE)
+ 600                         goto out;
+ 601
+ 602                 err = sk->sk_prot->connect(sk, uaddr, addr_len); //<---here it invokes struct sock socket protocol in address family
+ 603                 if (err < 0)
+ 604                         goto out;
+ 605
+ 606                 sock->state = SS_CONNECTING;
+ 607
+ 608                 /* Just entered SS_CONNECTING state; the only
+ 609                  * difference is that return value in non-blocking
+ 610                  * case is EINPROGRESS, rather than EALREADY.
+ 611                  */
+ 612                 err = -EINPROGRESS;
+ 613                 break;
+ 614         }
+ 615
+ 616         timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
+ 617
+ 618         if ((1 << sk->sk_state) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) {
+ 619                 /* Error code is set above */
+ 620                 if (!timeo || !inet_wait_for_connect(sk, timeo))
+ 621                         goto out;
+ 622
+ 623                 err = sock_intr_errno(timeo);
+ 624                 if (signal_pending(current))
+ 625                         goto out;
+ 626         }
+ 627
+ 628         /* Connection was closed by RST, timeout, ICMP error
+ 629          * or another process disconnected us.
+ 630          */
+ 631         if (sk->sk_state == TCP_CLOSE)
+ 632                 goto sock_error;
+ 633
+ 634         /* sk->sk_err may be not zero now, if RECVERR was ordered by user
+ 635          * and error was received after socket entered established state.
+ 636          * Hence, it is handled normally after connect() return successfully.
+ 637          */
+ 638
+ 639         sock->state = SS_CONNECTED;
+ 640         err = 0;
+ 641 out:
+ 642         release_sock(sk);
+ 643         return err;
+ 644
+ 645 sock_error:
+ 646         err = sock_error(sk) ? : -ECONNABORTED;
+ 647         sock->state = SS_UNCONNECTED;
+ 648         if (sk->sk_prot->disconnect(sk, flags))
+ 649                 sock->state = SS_DISCONNECTING;
+ 650         goto out;
+ 651 }
+ 652 EXPORT_SYMBOL(inet_stream_connect);
+                                                        
+
+include/net/sock.h
+
+
+ 185   *     @sk_protocol: which protocol this socket belongs in this network family //<---------here is sk_protocol field in struct sock
+ 186   *     @sk_peercred: %SO_PEERCRED setting
+ 187   *     @sk_rcvlowat: %SO_RCVLOWAT setting
+ 188   *     @sk_rcvtimeo: %SO_RCVTIMEO setting
+ 189   *     @sk_sndtimeo: %SO_SNDTIMEO setting
+ 190   *     @sk_filter: socket filtering instructions
+ 191   *     @sk_protinfo: private area, net family specific, when not using slab
+ 192   *     @sk_timer: sock cleanup timer
+ 193   *     @sk_stamp: time stamp of last packet received
+ 194   *     @sk_socket: Identd and reporting IO signals
+ 195   *     @sk_user_data: RPC layer private data
+ 196   *     @sk_sndmsg_page: cached page for sendmsg
+ 197   *     @sk_sndmsg_off: cached offset for sendmsg
+ 198   *     @sk_send_head: front of stuff to transmit
+ 199   *     @sk_security: used by security modules
+ 200   *     @sk_mark: generic packet mark
+ 201   *     @sk_write_pending: a write to stream socket waits to start
+ 202   *     @sk_state_change: callback to indicate change in the state of the sock
+ 203   *     @sk_data_ready: callback to indicate there is data to be processed
+ 204   *     @sk_write_space: callback to indicate there is bf sending space available
+ 205   *     @sk_error_report: callback to indicate errors (e.g. %MSG_ERRQUEUE)
+ 206   *     @sk_backlog_rcv: callback to process the backlog
+ 207   *     @sk_destruct: called at sock freeing time, i.e. when all refcnt == 0
+ 208  */
+ 209 struct sock {
+ 210         /*
+ 211          * Now struct inet_timewait_sock also uses sock_common, so please just
+ 212          * don't add nothing before this first member (__sk_common) --acme
+ 213          */
+ 214         struct sock_common      __sk_common;
+ 215 #define sk_node                 __sk_common.skc_node
+ 216 #define sk_nulls_node           __sk_common.skc_nulls_node
+ 217 #define sk_refcnt               __sk_common.skc_refcnt
+ 218
+ 219 #define sk_copy_start           __sk_common.skc_hash
+ 220 #define sk_hash                 __sk_common.skc_hash
+ 221 #define sk_family               __sk_common.skc_family
+ 222 #define sk_state                __sk_common.skc_state
+ 223 #define sk_reuse                __sk_common.skc_reuse
+ 224 #define sk_bound_dev_if         __sk_common.skc_bound_dev_if
+ 225 #define sk_bind_node            __sk_common.skc_bind_node
+ 226 #define sk_prot                 __sk_common.skc_prot //<---------field of struct sock_common
+ 227 #define sk_net                  __sk_common.skc_net
+
+
+ 105 /**
+ 106  *      struct sock_common - minimal network layer representation of sockets
+ 107  *      @skc_node: main hash linkage for various protocol lookup tables
+ 108  *      @skc_nulls_node: main hash linkage for UDP/UDP-Lite protocol
+ 109  *      @skc_refcnt: reference count
+ 110  *      @skc_hash: hash value used with various protocol lookup tables
+ 111  *      @skc_family: network address family
+ 112  *      @skc_state: Connection state
+ 113  *      @skc_reuse: %SO_REUSEADDR setting
+ 114  *      @skc_bound_dev_if: bound device index if != 0
+ 115  *      @skc_bind_node: bind hash linkage for various protocol lookup tables
+ 116  *      @skc_prot: protocol handlers inside a network family //<------------------
+ 117  *      @skc_net: reference to the network namespace of this socket
+ 118  *
+ 119  *      This is the minimal network layer representation of sockets, the header
+ 120  *      for struct sock and struct inet_timewait_sock.
+ 121  */
+ 122 struct sock_common {
+ 123         /*
+ 124          * first fields are not copied in sock_copy()
+ 125          */
+ 126         union {
+ 127                 struct hlist_node       skc_node;
+ 128                 struct hlist_nulls_node skc_nulls_node;
+ 129         };
+ 130         atomic_t                skc_refcnt;
+ 131
+ 132         unsigned int            skc_hash;
+ 133         unsigned short          skc_family;
+ 134         volatile unsigned char  skc_state;
+ 135         unsigned char           skc_reuse;
+ 136         int                     skc_bound_dev_if;
+ 137         struct hlist_node       skc_bind_node;
+ 138         struct proto            *skc_prot; //<-----------------
+ 139 #ifdef CONFIG_NET_NS
+ 140         struct net              *skc_net;
+ 141 #endif
+ 142 };
+
+
+
+net/ipv4/tcp_ipv4.c
+
+2427 struct proto tcp_prot = {
+2428         .name                   = "TCP",
+2429         .owner                  = THIS_MODULE,
+2430         .close                  = tcp_close,
+2431         .connect                = tcp_v4_connect, //<-------------see, finally it comes to here for tcp ipv4 connect function
+2432         .disconnect             = tcp_disconnect,
+2433         .accept                 = inet_csk_accept,
+2434         .ioctl                  = tcp_ioctl,
+2435         .init                   = tcp_v4_init_sock,
+2436         .destroy                = tcp_v4_destroy_sock,
+2437         .shutdown               = tcp_shutdown,
+2438         .setsockopt             = tcp_setsockopt,
+2439         .getsockopt             = tcp_getsockopt,
+2440         .recvmsg                = tcp_recvmsg,
+2441         .backlog_rcv            = tcp_v4_do_rcv,
+2442         .hash                   = inet_hash,
+2443         .unhash                 = inet_unhash,
+2444         .get_port               = inet_csk_get_port,
+2445         .enter_memory_pressure  = tcp_enter_memory_pressure,
+2446         .sockets_allocated      = &tcp_sockets_allocated,
+2447         .orphan_count           = &tcp_orphan_count,
+2448         .memory_allocated       = &tcp_memory_allocated,
+2449         .memory_pressure        = &tcp_memory_pressure,
+2450         .sysctl_mem             = sysctl_tcp_mem,
+2451         .sysctl_wmem            = sysctl_tcp_wmem,
+2452         .sysctl_rmem            = sysctl_tcp_rmem,
+2453         .max_header             = MAX_TCP_HEADER,
+2454         .obj_size               = sizeof(struct tcp_sock),
+2455         .slab_flags             = SLAB_DESTROY_BY_RCU,
+2456         .twsk_prot              = &tcp_timewait_sock_ops,
+2457         .rsk_prot               = &tcp_request_sock_ops,
+2458         .h.hashinfo             = &tcp_hashinfo,
+2459 #ifdef CONFIG_COMPAT
+2460         .compat_setsockopt      = compat_tcp_setsockopt,
+2461         .compat_getsockopt      = compat_tcp_getsockopt,
+2462 #endif
+2463 };
+
+
+let's read tcp_v4_connect
+
+ 145 /* This will initiate an outgoing connection. */
+ 146 int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
+ 147 {
+ 148         struct inet_sock *inet = inet_sk(sk); //<---representation of INET sockets, mostly layer 3 ip information
+ 149         struct tcp_sock *tp = tcp_sk(sk); //<---tcp layer representation
+ 150         struct sockaddr_in *usin = (struct sockaddr_in *)uaddr; //<---destination socket address structure passed from user space
+ 151         struct rtable *rt;
+ 152         __be32 daddr, nexthop;
+ 153         int tmp;
+ 154         int err;
+ 155
+ 156         if (addr_len < sizeof(struct sockaddr_in))
+ 157                 return -EINVAL;
+ 158
+ 159         if (usin->sin_family != AF_INET) //<----INET address family for INET IPV4
+ 160                 return -EAFNOSUPPORT;
+ 161
+ 162         nexthop = daddr = usin->sin_addr.s_addr; //<----destination ip address
+ 163         if (inet->opt && inet->opt->srr) { //<---if doing ip strict source routing
+ 164                 if (!daddr)
+ 165                         return -EINVAL;
+ 166                 nexthop = inet->opt->faddr;
+ 167         } 
+ 168
+ 169         tmp = ip_route_connect(&rt, nexthop, inet->saddr,
+ 170                                RT_CONN_FLAGS(sk), sk->sk_bound_dev_if,
+ 171                                IPPROTO_TCP,
+ 172                                inet->sport, usin->sin_port, sk, 1); //<---lookup routing cache/table and fill in rtable rt
+ 173         if (tmp < 0) { //<---no route found
+ 174                 if (tmp == -ENETUNREACH)
+ 175                         IP_INC_STATS_BH(sock_net(sk), IPSTATS_MIB_OUTNOROUTES);
+ 176                 return tmp;
+ 177         } 
+ 178
+ 179         if (rt->rt_flags & (RTCF_MULTICAST | RTCF_BROADCAST)) { //<---tcp ipv4 can't do multicast or broadcast connect I think ?
+ 180                 ip_rt_put(rt);
+ 181                 return -ENETUNREACH;
+ 182         }
+ 183
+ 184         if (!inet->opt || !inet->opt->srr) //<---assign route destionation address to daddr if no ip option or no ip source routing
+ 185                 daddr = rt->rt_dst;
+ 186
+ 187         if (!inet->saddr) //<----no bind on source ip from userspace, use route source ip
+ 188                 inet->saddr = rt->rt_src;
+ 189         inet->rcv_saddr = inet->saddr; //<---assign source ip to socket receiving source ip
+ 190
+ 191         if (tp->rx_opt.ts_recent_stamp && inet->daddr != daddr) {
+ 192                 /* Reset inherited state */
+ 193                 tp->rx_opt.ts_recent       = 0;
+ 194                 tp->rx_opt.ts_recent_stamp = 0;
+ 195                 tp->write_seq              = 0;
+ 196         }
+ 197
+ 198         if (tcp_death_row.sysctl_tw_recycle &&
+ 199             !tp->rx_opt.ts_recent_stamp && rt->rt_dst == daddr) {
+ 200                 struct inet_peer *peer = rt_get_peer(rt);
+ 201                 /*
+ 202                  * VJ's idea. We save last timestamp seen from
+ 203                  * the destination in peer table, when entering state
+ 204                  * TIME-WAIT * and initialize rx_opt.ts_recent from it,
+ 205                  * when trying new connection.
+ 206                  */
+ 207                 if (peer != NULL &&
+ 208                     peer->tcp_ts_stamp + TCP_PAWS_MSL >= get_seconds()) {
+ 209                         tp->rx_opt.ts_recent_stamp = peer->tcp_ts_stamp;
+ 210                         tp->rx_opt.ts_recent = peer->tcp_ts;
+ 211                 }
+ 212         }
+ 213
+ 214         inet->dport = usin->sin_port; //<----assign destination port from userspace to inet dport
+ 215         inet->daddr = daddr;
+ 216
+ 217         inet_csk(sk)->icsk_ext_hdr_len = 0;
+ 218         if (inet->opt)
+ 219                 inet_csk(sk)->icsk_ext_hdr_len = inet->opt->optlen;
+ 220
+ 221         tp->rx_opt.mss_clamp = 536;
+ 222
+ 223         /* Socket identity is still unknown (sport may be zero).
+ 224          * However we set state to SYN-SENT and not releasing socket
+ 225          * lock select source port, enter ourselves into the hash tables and
+ 226          * complete initialization after this.
+ 227          */
+ 228         tcp_set_state(sk, TCP_SYN_SENT);
+ 229         err = inet_hash_connect(&tcp_death_row, sk); //<---find a source port for this connection
+ 230         if (err)
+ 231                 goto failure;
+ 232
+ 233         err = ip_route_newports(&rt, IPPROTO_TCP,
+ 234                                 inet->sport, inet->dport, sk);
+ 235         if (err)
+ 236                 goto failure;
+ 237
+ 238         /* OK, now commit destination to socket.  */
+ 239         sk->sk_gso_type = SKB_GSO_TCPV4;
+ 240         sk_setup_caps(sk, &rt->u.dst); //<---assign the route destination route cache to the sock
+ 241
+ 242         if (!tp->write_seq)
+ 243                 tp->write_seq = secure_tcp_sequence_number(inet->saddr,
+ 244                                                            inet->daddr,
+ 245                                                            inet->sport,
+ 246                                                            usin->sin_port); //<---get a secure tcp SYN sequence number
+ 247
+ 248         inet->id = tp->write_seq ^ jiffies;
+ 249
+ 250         err = tcp_connect(sk); //<----allocate and queue the skb for the SYN data gram
+ 251         rt = NULL;
+ 252         if (err)
+ 253                 goto failure;
+ 254
+ 255         return 0;
+ 256
+ 257 failure:
+ 258         /*
+ 259          * This unhashes the socket and releases the local port,
+ 260          * if necessary.
+ 261          */
+ 262         tcp_set_state(sk, TCP_CLOSE);
+ 263         ip_rt_put(rt);
+ 264         sk->sk_route_caps = 0;
+ 265         inet->dport = 0;
+ 266         return err;
+ 267 }
+ 268
+
+
+
+
+
+
+
+
+
+
+
