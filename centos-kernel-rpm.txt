@@ -1,0 +1,16 @@
+http://www.devops-blog.net/linux-tweaks/compiling-your-own-kernel-for-debian-and-centos-or-alike
+
+# for faster compilation time do this. It adjusts compiling to the number of your CPU cores
+export CONCURRENCY_LEVEL=`getconf _NPROCESSORS_ONLN`
+
+# RHEL / Fedora / CentOS
+make rpm
+# install kernel after build
+rpm -ivh /root/rpmbuild/RPMS/x86_64/kernel-2.6.32.27-1.x86_64.rpm
+
+
+# RHEL / Fedora / CentOS
+mkinitrd initramfs-2.6.32.27.img 2.6.32.27
+grubby --add-kernel=/boot/vmlinuz-2.6.32.27  --initrd=/boot/initramfs-2.6.32.27.img --title=2.6.32.27 --make-default --copy-default
+# check /etc/grub.conf and modify kernel flags if necessary
+
