@@ -1,3 +1,43 @@
+su -c 'yum install rpmdevtools'
+
+
+Prepare an RPM package-building environment in your (non-root) home directory by running the following command:
+
+rpmdev-setuptree
+
+http://wiki.centos.org/HowTos/Custom_Kernel
+
+1. Build preparations
+
+To be able to perform a successful kernel build, you will need to install the
+following packages:
+
+yum groupinstall "Development Tools"
+yum install ncurses-devel
+yum install qt-devel (This is only necessary if you wish to use make xconfig
+instead of make gconfig or make menuconfig.)
+yum install hmaccalc zlib-devel binutils-devel elfutils-libelf-devel
+The full kernel source tree. You should follow the instructions in Section 2
+of I Need the Kernel Source.
+
+
+http://wiki.centos.org/HowTos/I_need_the_Kernel_Source
+
+To install the source package and tools for CentOS-6:
+
+As root, install the rpm-build, redhat-rpm-config, asciidoc, hmaccalc,
+perl-ExtUtils-Embed, xmlto, audit-libs-devel, binutils-devel, elfutils-devel,
+elfutils-libelf-devel, newt-devel, python-devel and zlib-devel packages:
+
+
+[root@host]# yum install rpm-build redhat-rpm-config asciidoc hmaccalc perl-ExtUtils-Embed xmlto 
+[root@host]# yum install audit-libs-devel binutils-devel elfutils-devel elfutils-libelf-devel
+[root@host]# yum install newt-devel python-devel zlib-devel
+
+
+
+
+
 http://www.devops-blog.net/linux-tweaks/compiling-your-own-kernel-for-debian-and-centos-or-alike
 
 # for faster compilation time do this. It adjusts compiling to the number of your CPU cores
@@ -9,8 +49,33 @@ make rpm
 rpm -ivh /root/rpmbuild/RPMS/x86_64/kernel-2.6.32.27-1.x86_64.rpm
 
 
-# RHEL / Fedora / CentOS
-mkinitrd initramfs-2.6.32.27.img 2.6.32.27
+# RHEL / Fedora / CentOS, remove the previous same kernel and
+# /lib/modules/<2.6.32>, then install the new kernel rpm
+
+mkinitrd initramfs-2.6.32.img 2.6.32
 grubby --add-kernel=/boot/vmlinuz-2.6.32.27  --initrd=/boot/initramfs-2.6.32.27.img --title=2.6.32.27 --make-default --copy-default
 # check /etc/grub.conf and modify kernel flags if necessary
+
+
+Error inserting scsi_wait_scan - Invalid module format
+http://stackoverflow.com/questions/13929176/error-inserting-scsi-wait-scan-invalid-module-format
+
+or disable
+SCSI_SCAN_ASYNC
+
+# SCSI support type (disk, tape, CD-ROM)
+#
+CONFIG_BLK_DEV_SD=y
+CONFIG_CHR_DEV_ST=m
+CONFIG_CHR_DEV_OSST=m
+CONFIG_BLK_DEV_SR=m
+CONFIG_BLK_DEV_SR_VENDOR=y
+CONFIG_CHR_DEV_SG=m
+CONFIG_CHR_DEV_SCH=m
+CONFIG_SCSI_ENCLOSURE=m
+CONFIG_SCSI_MULTI_LUN=y
+CONFIG_SCSI_CONSTANTS=y
+CONFIG_SCSI_LOGGING=y
+# CONFIG_SCSI_SCAN_ASYNC is not set <==============
+CONFIG_SCSI_WAIT_SCAN=m
 
