@@ -1,0 +1,3 @@
+1: force to push local branch head to remote master head on github, warning: will lose previous history on github remote master
+
+#git push origin +master
