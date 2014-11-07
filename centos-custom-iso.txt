@@ -1,0 +1,138 @@
+http://www.nathanboyce.com/automatic-centos-6-installation-dvd-with-kickstart/
+
+Automatic CentOS 6 Installation DVD With Kickstart
+
+By Nate on February 10, 2013
+
+Automatic custom CentOS 6 Installation DVD With Kickstart
+
+This is how to add and remove packages from a Centos or like iso and create a automated install image. This should work with any rpm distro that uses anaconda as its installer. Anaconda/UX that ships with Fedora 18 and newer may have some differences.
+
+You will need the install images and a workstation running a rpm anaconda based distro. I used Fedora 17 as my workstation and the Centos 6.3 dvd images. The DVD images can be found at [http://isoredirect.centos.org/centos/6/isos/]
+
+The first step it to create a directory to work in. I used /home/centos_rebuild for my repackaging because I had a lot of space in home. You will need about 20Gb of free space.
+Set up the environment
+
+You will need the createrepo, isomd5sum and genisoimage
+sudo yum install createrepo isomd5sum genisoimage
+
+Place the iso or iso’s in the directory you just created and add a couple mount points for the iso.
+sudo /home/centos_rebuild/DVD1_mount
+sudo /home/centos_rebuild/DVD2_mount
+
+Mount the iso’s
+sudo mount -o loop /home/centos_rebuild/CentOS-6.3-x86_64-bin-DVD2.iso /home/centos_rebuild/DVD2_mount
+sudo mount -o loop /home/centos_rebuild/CentOS-6.3-x86_64-bin-DVD1.iso /home/centos_rebuild/DVD1_mount
+
+Next you need a working directory for what will be the new install image.
+sudo mkdir -p /home/centos_rebuild/kickstart_build/{isolinux,images,ks,CentOS}
+
+Fix permissions so you dont have to do the rest with sudo
+sudo chown -R $USER: /home/centos_rebuild
+
+Now you can work from /home/centos_rebuild
+cd /home/centos_rebuild
+
+Move some files around
+
+cp -R DVD1_mount/isolinux/* kickstart_build/isolinux
+cp DVD1_mount/.discinfo kickstart_build/
+cp -R DVD1_mount/images/* kickstart_build/images/
+chmod 664 ./kickstart_build/isolinux/isolinux.bin
+chmod 664 ./kickstart_build/isolinux/isolinux.cfg
+chmod 664 ./kickstart_build/ks/ks.cfg
+cp DVD1_mount/Packages/*.rpm kickstart_build/CentOS/
+cp DVD2_mount/Packages/*.rpm kickstart_build/CentOS/
+
+You need a comps.xml for anaconda. I just pulled one from a centos repo.
+
+cd kickstart_build
+wget http://vault.centos.org/centos/6.4/os/x86_64/repodata/5543021d0abe9b87103b25a5107ca4881a1c7e889aba73a6744ee1d02990b06a-c6-x86_64-comps.xml.gz
+unzip 5543021d0abe9b87103b25a5107ca4881a1c7e889aba73a6744ee1d02990b06a-c6-x86_64-comps.xml.gz
+mv 5543021d0abe9b87103b25a5107ca4881a1c7e889aba73a6744ee1d02990b06a-c6-x86_64-comps.xml comps.xml
+Customize
+
+Next create the kickstart file. You can use system-config-kickstart or pull /root/anaconda-ks.cfg form a install to get a start for the kickstart config.
+A good example can be found at http://usgcb.nist.gov/usgcb/content/configuration/workstation-ks.cfg and the doc can be found at https://access.redhat.com/knowledge/docs/en-US/Red_Hat_Enterprise_Linux/6/html/Installation_Guide/s1-kickstart2-options.html]
+
+You should create the kickstart file as /home/centos_rebuild/kickstart_build/ks/ks.cfg
+
+Place any rpm and dependencies you would like to add the the image. Example rpl
+You can pull the rpm from the repo or from a Centos6 server you can use yumdownloader
+Example
+On Centos6 server yumdownloader rpl
+Move rpm to workstaion and place it in /home/centos_rebuild/kickstart_build/CentOS/
+
+Make sure you have the new packeg added to the ks.cfg package section.
+This is a good time to remove some unnneded packages. You list might be differnt and Im missing a few ferom this list.
+
+cd /home/centos_rebuild/kickstart_build/CentOS
+for X in $(ls -a |grep -iE "gnome|kde|libreoffice|tiger|tomcat|java|log4|gimp|evolution|firefox|thunderbird|eclipse"); do rm -f $X; done
+
+Next edit /home/centos_rebuild/kickstart_build/isolinux/isolinux.cfg so the install will atomaticaly use the kickstart file.
+
+Add label ks group and move menu default from linux to ks.
+
+It should look something like this (this might not be w hat you want because it will wipe everything)
+default vesamenu.c32
+#prompt 1
+timeout 600
+
+display boot.msg
+
+menu background splash.jpg
+menu title Cabelas OLS Image CentOS 6.3!
+menu color border 0 #ffffffff #00000000
+menu color sel 7 #ffffffff #ff000000
+menu color title 0 #ffffffff #00000000
+menu color tabmsg 0 #ffffffff #00000000
+menu color unsel 0 #ffffffff #00000000
+menu color hotsel 0 #ff000000 #ffffffff
+menu color hotkey 7 #ffffffff #ff000000
+menu color scrollbar 0 #ffffffff #00000000
+
+label linux
+menu label ^Install or upgrade an existing system
+kernel vmlinuz
+append initrd=initrd.img
+label ks
+menu label Install with included Kickstart file
+menu default
+kernel vmlinuz
+append ks=cdrom:/ks/ks.cfg initrd=initrd.img
+label vesa
+menu label Install system with ^basic video driver
+kernel vmlinuz
+append initrd=initrd.img xdriver=vesa nomodeset
+label rescue
+menu label ^Rescue installed system
+kernel vmlinuz
+append initrd=initrd.img rescue
+label local
+menu label Boot from ^local drive
+localboot 0xffff
+label memtest86
+menu label ^Memory test
+kernel memtest
+append -
+Build
+
+Starting the uild proccess.
+The first step in the rebuild is to creat a new repo list
+
+cd /home/centos_rebuild/kickstart_build
+declare -x discinfo=$(head -1 .discinfo)
+createrepo -u “media://$discinfo” -g comps.xml .
+
+Next build the image
+
+cd /home/centos_rebuild/
+mkisofs -r -N -L -d -J -T -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -V ols_cent6.3_v1 -boot-load-size 4 -boot-info-table -o ols_cent6.3_v1.iso kickstart_build/
+
+You now have a installable iso named ols_cent6.3_v1.iso but its missing the md5 check sums. To add the checksums to the iso run
+
+implantisomd5 ols_cent6.3_v1.iso
+
+Now the iso is done. I used virtual box for a quick test of the iso.
+
+
