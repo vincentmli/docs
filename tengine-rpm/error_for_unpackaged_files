@@ -1,0 +1,13 @@
+
+http://docs.fedoraproject.org/en-US/Fedora_Draft_Documentation/0.1/html/RPM_Guide/ch09s05s07.html
+
+Handling RPM build errors for unpackaged files
+Starting with RPM 4.1, rpmbuild will exit if all files in the $RPM_BUILD_ROOT directory are not found in the %files section (or in a file that lists file names used with the -f option). This is officially known as a Fascist build policy and you can turn it off with the following macros.
+The %_unpackaged_files_terminate_build macro, if set to 1, tells rpmbuild to exit if it finds files that are in the $RPM_BUILD_ROOT directory but not listed as part of the package. Set this macro to 0 to turn off the Fascist build policy. For example:
+%define _unpackaged_files_terminate_build 0
+You can also control the flag that specifies whether missing documentation files cause rpmbuild to exit. Set the %_missing_doc_files_terminate_build macro to 0 to turn off this feature:
+%define _missing_doc_files_terminate_build 0
+See the "Defining Spec File Macros" section later in the chapter for more on using macros.
+Cross Reference
+You can also store this setting in a macro file so that it applies for all packages you build. See Chapter 20, Customizing RPM Behavior for more on macro files.
+While the Fascist build policy may be an annoyance, it can prove very useful. Chances are your spec file has an error if you have files in the $RPM_BUILD_ROOT directory that are not listed in the %files section. The Fascist build policy helps catch these errors. In addition, since the error outputs a list of files in the $RPM_BUILD_ROOT directory that are not listed in the %files section, you can often paste this list into your %files section.
