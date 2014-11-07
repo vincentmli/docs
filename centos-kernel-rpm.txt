@@ -46,14 +46,18 @@ export CONCURRENCY_LEVEL=`getconf _NPROCESSORS_ONLN`
 # RHEL / Fedora / CentOS
 make rpm
 # install kernel after build
-rpm -ivh /root/rpmbuild/RPMS/x86_64/kernel-2.6.32.27-1.x86_64.rpm
+rpm -ivh /root/rpmbuild/RPMS/x86_64/kernel-2.6.32.x86_64.rpm
 
 
 # RHEL / Fedora / CentOS, remove the previous same kernel and
-# /lib/modules/<2.6.32>, then install the new kernel rpm
+# /lib/modules/<2.6.32>, then install the new kernel rpm on target system and
+# make new initramfs on the target system
 
-mkinitrd initramfs-2.6.32.img 2.6.32
-grubby --add-kernel=/boot/vmlinuz-2.6.32.27  --initrd=/boot/initramfs-2.6.32.27.img --title=2.6.32.27 --make-default --copy-default
+mkinitrd -v -f /boot/initramfs-2.6.32.img 2.6.32
+
+grub menu can be copy and pasted from centos stock config
+
+grubby --add-kernel=/boot/vmlinuz-2.6.32  --initrd=/boot/initramfs-2.6.32img --title=2.6.32 --make-default --copy-default
 # check /etc/grub.conf and modify kernel flags if necessary
 
 
