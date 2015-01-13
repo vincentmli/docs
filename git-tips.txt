@@ -1,3 +1,86 @@
 1: force to push local branch head to remote master head on github, warning: will lose previous history on github remote master
 
 #git push origin +master
+#
+A while ago my team had code for our project spread out in two different Git repositories.  Over time we realized that there was no good reason for this arrangement and was just a general hassle and source of friction, so we decided to combine our two repositories into one repository containing both halves of the code base, with each of the old repositories in its own subdirectory.  However, we wanted to preserve all of the change history from each repo and have it available in the new repository.
+
+The good news is that Git makes this sort of thing very easy to do.  Since a repository in Git is just a directed acyclic graph, it’s trivial to glue two graphs together and make one big graph.  The bad news is that there are a few different ways to do it and some of them end up with a less desirable result (at least for our purposes) than others.  For instance, do a web search on this subject and you’ll get a lot of information about git submodules or subtree merges, both of which are kind of complex and are designed for the situation where you’re trying to bring in source code from an external project or library and you want to bring in more changes from that project in the future, or ship your changes back to them.  One side effect of this is that when you import the source code using a subtree merge all of the files show up as newly added files.  You can see the history of commits for those files in aggregate (i.e. you can view the commits in the DAG) but if you try to view the history for a specific file in your sub-project all you’ll get is one commit for that file – the subtree merge.
+
+This is generally not a problem for the “import an external library” scenario but I was trying to do something different.  I wanted to glue to repositories together and have them look as though they had always been one repository all along.  I didn’t need the ability to extract changes and ship them back anywhere because my old repositories would be retired.  Fortunately, after much research and trial-and-error it turned out that it’s actually very easy to do what I was trying to do and it requires just a couple of straightforward git commands.
+
+The basic idea is that we follow these steps:
+
+    Create a new empty repository New.
+    Make an initial commit because we need one before we do a merge.
+    Add a remote to old repository OldA.
+    Merge OldA/master to New/master.
+    Make a subdirectory OldA.
+    Move all files into subdirectory OldA.
+    Commit all of the file moves.
+    Repeat 3-6 for OldB.
+
+A Powershell script for these steps might look like this:
+
+# Assume the current directory is where we want the new repository to be
+# created
+# # Create the new repository
+# git init
+#
+# # Before we do a merge, we have to have an initial commit, so we’ll make a
+# dummy commit
+# dir > deleteme.txt
+# git add .
+# git commit -m “Initial dummy commit”
+#
+# # Add a remote for and fetch the old repo
+# git remote add -f old_a <OldA repo URL>
+#
+# # Merge the files from old_a/master into new/master
+# git merge old_a/master
+#
+# # Clean up our dummy file because we don’t need it any more
+# git rm .\deleteme.txt
+# git commit -m “Clean up initial file”
+#
+# # Move the old_a repo files and folders into a subdirectory so they don’t
+# collide with the other repo coming later
+# mkdir old_a
+# dir –exclude old_a | %{git mv $_.Name old_a}
+#
+# # Commit the move
+# git commit -m “Move old_a files into subdir”
+#
+# # Do the same thing for old_b
+# git remote add -f old_b <OldB repo URL>
+# git merge old_b/master
+# mkdir old_b
+# dir –exclude old_a,old_b | %{git mv $_.Name old_b}
+# git commit -m “Move old_b files into subdir”
+#
+# Very simple.  Now we have all the files from OldA and OldB in repository
+# New, sitting in separate subdirectories, and we have both the commit history
+# and the individual file history for all files.  (Since we did a rename, you
+# have to do “git log –follow <file>” to see that history, but that’s true for
+# any file rename operation, not just for our repo-merge.)
+#
+# Obviously you could instead merge old_b into old_a (which becomes the new
+# combined repo) if you’d rather do that – modify the script to suit.
+#
+# If we have in-progress feature branches in the old repositories that also
+# need to come over to the new repository, that’s also quite easy:
+#
+# # Bring over a feature branch from one of the old repos
+# git checkout -b feature-in-progress
+# git merge -s recursive -Xsubtree=old_a old_a/feature-in-progress
+#
+# This is the only non-obvious part of the whole operation.  We’re doing a
+# normal recursive merge here (the “-s recursive” part isn’t strictly
+# necessary because that’s the default) but we’re passing an argument to the
+# recursive merge that tells Git that we’ve renamed the target and that helps
+# Git line them up correctly.  This is not the same thing as the thing called
+# a “subtree merge“.
+#
+# So, if you’re simply trying to merge two repositories together into one
+# repository and make it look like it was that way all along, don’t mess with
+# submodules or subtree merges.  Just do a few regular, normal merges and
+# you’ll have what you want.
