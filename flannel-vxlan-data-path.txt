@@ -1,0 +1,368 @@
+           +-------------------------------------------------------+
+           | +-vxlan_xmit                                          |
+           | \                                                     | +-vxlan_socket_create
+           |  -__vxlan_find_mac                                    |   \
+           |   \                                                   |    +-vxlan_create_sock
+           |    -vxlan_xmit_one                                    |    |  \
+           |     \                                                 |    |   +-udp_sock_create
+           |      +vxlan_get_route                                 |    +-vxlan_rcv
+           |      |                                                |      \
+           |      +vxlan_build_skb                                 |       +-pskb_may_pull(skb, VXLAN_HLEN))
+           |      |                                                |       |
+           |      +udp_tunnel_xmit_skb                             |       +-vxlan_vs_find_vni
+           |       \                                               |       |
+           |        -iptunnel_xmit                                 |       +-gro_cells_receive
+           |# bridge fdb show dev flannel.1                        |  # bridge fdb show dev flannel.1 
+           | 36:3c:de:36:68:58 dst 10.169.72.98 self permanent     |  46:4d:ab:d0:69:e1 dst 10.169.72.93 self permanent
+           |                                                       |
+           |# ip route get 10.169.72.98                            |  # ip route get 10.169.72.93
+           | 10.169.72.98 dev ens224  src 10.169.72.93             |  10.169.72.93 dev ens224  src 10.169.72.98     
+           |                                                       |
+           |                                                       |
+           |   dst: VTEP MAC: 36:3c:de:36:68:58                    |   src: VTEP MAC: 46:4d:ab:d0:69:e1 
+           v   src: VTEP MAC: 46:4d:ab:d0:69:e1                    v   dst: VTEP MAC: 36:3c:de:36:68:58                           
++-------ens224<----->flannel.1 VTEP ---+                   +---ens224<----->flannel.1 VTEP------------+
+| 10.169.72.93              ^          |                   | 10.169.72.98            ^                |
+|                           |          |                   |                         |                |
+|                           |          |                   |                         v                |
+|                           v          |                   |                         cni0             |
+|           dst: cni0 mac   cni0       |                   |                         ^                |
+|           src: pod mac    ^          |                   |                         v                |
+|                           v          |                   |                   +-----+---+            |
+|                     |-----+----+     |                   |                   |  POD    |            |
+|                     | POD      |     |                   |                   |         |            |
+|                     |          |     |                   |                   +---------+            |
+|                     +----------+     |                   |                                          |
++---------------------------+----------+                   +------------------------------------------+
+        Master Node                                                    Worker Node 
+
+drivers/net/vxlan.c
+
+/* UDP port for VXLAN traffic.
+ * The IANA assigned port is 4789, but the Linux default is 8472
+ * for compatibility with early adopters.
+ */
+static unsigned short vxlan_port __read_mostly = 8472;
+module_param_named(udp_port, vxlan_port, ushort, 0444);
+MODULE_PARM_DESC(udp_port, "Destination UDP port");
+ 
+ 
+/* Look up Ethernet address in forwarding table */
+static struct vxlan_fdb *__vxlan_find_mac(struct vxlan_dev *vxlan,
+					  const u8 *mac, __be32 vni)
+{
+	struct hlist_head *head = vxlan_fdb_head(vxlan, mac, vni);
+	struct vxlan_fdb *f;
+
+	hlist_for_each_entry_rcu(f, head, hlist) {
+		if (ether_addr_equal(mac, f->eth_addr)) {
+			if (vxlan->cfg.flags & VXLAN_F_COLLECT_METADATA) {
+				if (vni == f->vni)
+					return f;
+			} else {
+				return f;
+			}
+		}
+	}
+
+	return NULL;
+}
+
+
+
+
+static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct vxlan_dev *vxlan = netdev_priv(dev);
+	struct vxlan_rdst *rdst, *fdst = NULL;
+	const struct ip_tunnel_info *info;
+	bool did_rsc = false;
+	struct vxlan_fdb *f;
+	struct ethhdr *eth;
+	__be32 vni = 0;
+
+.............................................
+	eth = eth_hdr(skb);
+	f = vxlan_find_mac(vxlan, eth->h_dest, vni);
+	did_rsc = false;
+
+......................................
+	list_for_each_entry_rcu(rdst, &f->remotes, list) {
+		struct sk_buff *skb1;
+
+		if (!fdst) {
+			fdst = rdst;
+			continue;
+		}
+		skb1 = skb_clone(skb, GFP_ATOMIC);
+		if (skb1)
+			vxlan_xmit_one(skb1, dev, vni, rdst, did_rsc);
+	}
+
+	if (fdst)
+		vxlan_xmit_one(skb, dev, vni, fdst, did_rsc);
+	else
+		kfree_skb(skb);
+	return NETDEV_TX_OK;
+}
+
+
+static void vxlan_xmit_one(struct sk_buff *skb, struct net_device *dev,
+                           __be32 default_vni, struct vxlan_rdst *rdst,
+                           bool did_rsc)
+{
+
+....................
+
+        src_port = udp_flow_src_port(dev_net(dev), skb, vxlan->cfg.port_min,
+                                     vxlan->cfg.port_max, true);
+
+        rcu_read_lock();
+        if (dst->sa.sa_family == AF_INET) {
+                struct vxlan_sock *sock4 = rcu_dereference(vxlan->vn4_sock);
+                struct rtable *rt;
+                __be16 df = 0;
+
+                rt = vxlan_get_route(vxlan, dev, sock4, skb, ifindex, tos, //<<<<<  route lookup 
+                                     dst->sin.sin_addr.s_addr,
+                                     &local_ip.sin.sin_addr.s_addr,
+                                     dst_port, src_port,
+                                     dst_cache, info);
+                if (IS_ERR(rt)) {
+                        err = PTR_ERR(rt);
+                        goto tx_error;
+                }
+
+                /* Bypass encapsulation if the destination is local */
+                if (!info) {
+                        err = encap_bypass_if_local(skb, dev, vxlan, dst,
+                                                    dst_port, ifindex, vni,
+                                                    &rt->dst, rt->rt_flags);
+                        if (err)
+                                goto out_unlock;
+                } else if (info->key.tun_flags & TUNNEL_DONT_FRAGMENT) {
+                        df = htons(IP_DF);
+                }
+
+                ndst = &rt->dst;
+                tos = ip_tunnel_ecn_encap(tos, old_iph, skb);
+                ttl = ttl ? : ip4_dst_hoplimit(&rt->dst);
+                err = vxlan_build_skb(skb, ndst, sizeof(struct iphdr), //<<<< build head space for outter header
+                                      vni, md, flags, udp_sum);
+                if (err < 0)
+                        goto tx_error;
+
+                udp_tunnel_xmit_skb(rt, sock4->sock->sk, skb, local_ip.sin.sin_addr.s_addr,
+                                    dst->sin.sin_addr.s_addr, tos, ttl, df,
+                                    src_port, dst_port, xnet, !udp_sum);
+.........................................
+
+
+static int vxlan_build_skb(struct sk_buff *skb, struct dst_entry *dst,
+                           int iphdr_len, __be32 vni,
+                           struct vxlan_metadata *md, u32 vxflags,
+                           bool udp_sum)
+{
+        struct vxlanhdr *vxh;
+        int min_headroom;
+        int err;
+        int type = udp_sum ? SKB_GSO_UDP_TUNNEL_CSUM : SKB_GSO_UDP_TUNNEL;
+        __be16 inner_protocol = htons(ETH_P_TEB);
+
+}
+
+
+
+void udp_tunnel_xmit_skb(struct rtable *rt, struct sock *sk, struct sk_buff *skb,
+                         __be32 src, __be32 dst, __u8 tos, __u8 ttl,
+                         __be16 df, __be16 src_port, __be16 dst_port,
+                         bool xnet, bool nocheck)
+{
+        struct udphdr *uh;
+
+        __skb_push(skb, sizeof(*uh));
+        skb_reset_transport_header(skb);
+        uh = udp_hdr(skb);
+
+        uh->dest = dst_port;
+        uh->source = src_port;
+        uh->len = htons(skb->len);
+
+        memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
+
+        udp_set_csum(nocheck, skb, src, dst, skb->len);
+
+        iptunnel_xmit(sk, rt, skb, src, dst, IPPROTO_UDP, tos, ttl, df, xnet);
+}
+
+
+void iptunnel_xmit(struct sock *sk, struct rtable *rt, struct sk_buff *skb,
+                   __be32 src, __be32 dst, __u8 proto,
+                   __u8 tos, __u8 ttl, __be16 df, bool xnet)
+{
+        int pkt_len = skb->len - skb_inner_network_offset(skb);
+        struct net *net = dev_net(rt->dst.dev);
+        struct net_device *dev = skb->dev;
+        struct iphdr *iph;
+        int err;
+
+        skb_scrub_packet(skb, xnet);
+
+        skb_clear_hash_if_not_l4(skb);
+        skb_dst_set(skb, &rt->dst);
+        memset(IPCB(skb), 0, sizeof(*IPCB(skb)));
+
+        /* Push down and install the IP header. */
+        skb_push(skb, sizeof(struct iphdr));
+        skb_reset_network_header(skb);
+
+        iph = ip_hdr(skb);
+
+        iph->version    =       4;
+        iph->ihl        =       sizeof(struct iphdr) >> 2;
+        iph->frag_off   =       df;
+        iph->protocol   =       proto;
+        iph->tos        =       tos;
+        iph->daddr      =       dst;
+        iph->saddr      =       src;
+        iph->ttl        =       ttl;
+        __ip_select_ident(net, iph, skb_shinfo(skb)->gso_segs ?: 1);
+
+        err = ip_local_out(net, sk, skb);
+        if (unlikely(net_xmit_eval(err)))
+                pkt_len = 0;
+        iptunnel_xmit_stats(dev, pkt_len);
+}
+
+
+
+receive:
+
+/* Create new listen socket if needed */
+static struct vxlan_sock *vxlan_socket_create(struct net *net, bool ipv6,
+                                              __be16 port, u32 flags)
+{
+        struct vxlan_net *vn = net_generic(net, vxlan_net_id);
+        struct vxlan_sock *vs;
+        struct socket *sock;
+        unsigned int h;
+        struct udp_tunnel_sock_cfg tunnel_cfg;
+
+        vs = kzalloc(sizeof(*vs), GFP_KERNEL);
+        if (!vs)
+                return ERR_PTR(-ENOMEM);
+
+        for (h = 0; h < VNI_HASH_SIZE; ++h)
+                INIT_HLIST_HEAD(&vs->vni_list[h]);
+
+        sock = vxlan_create_sock(net, ipv6, port, flags);
+        if (IS_ERR(sock)) {
+                kfree(vs);
+                return ERR_CAST(sock);
+        }
+
+        vs->sock = sock;
+        refcount_set(&vs->refcnt, 1);
+        vs->flags = (flags & VXLAN_F_RCV_FLAGS);
+
+        spin_lock(&vn->sock_lock);
+        hlist_add_head_rcu(&vs->hlist, vs_head(net, port));
+        udp_tunnel_notify_add_rx_port(sock,
+                                      (vs->flags & VXLAN_F_GPE) ?
+                                      UDP_TUNNEL_TYPE_VXLAN_GPE :
+                                      UDP_TUNNEL_TYPE_VXLAN);
+        spin_unlock(&vn->sock_lock);
+
+        /* Mark socket as an encapsulation socket. */
+        memset(&tunnel_cfg, 0, sizeof(tunnel_cfg));
+        tunnel_cfg.sk_user_data = vs;
+        tunnel_cfg.encap_type = 1;
+        tunnel_cfg.encap_rcv = vxlan_rcv; //<<<<<<<<<<<<<< receive
+        tunnel_cfg.encap_destroy = NULL;
+        tunnel_cfg.gro_receive = vxlan_gro_receive;
+        tunnel_cfg.gro_complete = vxlan_gro_complete;
+
+        setup_udp_tunnel_sock(net, sock, &tunnel_cfg);
+
+        return vs;
+}
+
+
+
+
+/* Callback from net/ipv4/udp.c to receive packets */
+static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
+{
+        struct pcpu_sw_netstats *stats;
+        struct vxlan_dev *vxlan;
+        struct vxlan_sock *vs;
+        struct vxlanhdr unparsed;
+        struct vxlan_metadata _md;
+        struct vxlan_metadata *md = &_md;
+        __be16 protocol = htons(ETH_P_TEB);
+        bool raw_proto = false;
+        void *oiph;
+        __be32 vni = 0;
+
+        /* Need UDP and VXLAN header to be present */
+        if (!pskb_may_pull(skb, VXLAN_HLEN))
+                goto drop;
+
+        unparsed = *vxlan_hdr(skb);
+        /* VNI flag always required to be set */
+        if (!(unparsed.vx_flags & VXLAN_HF_VNI)) {
+                netdev_dbg(skb->dev, "invalid vxlan flags=%#x vni=%#x\n",
+                           ntohl(vxlan_hdr(skb)->vx_flags),
+                           ntohl(vxlan_hdr(skb)->vx_vni));
+                /* Return non vxlan pkt */
+                goto drop;
+        }
+        unparsed.vx_flags &= ~VXLAN_HF_VNI;
+        unparsed.vx_vni &= ~VXLAN_VNI_MASK;
+
+        vs = rcu_dereference_sk_user_data(sk);
+        if (!vs)
+                goto drop;
+
+        vni = vxlan_vni(vxlan_hdr(skb)->vx_vni);
+
+        vxlan = vxlan_vs_find_vni(vs, skb->dev->ifindex, vni);
+        if (!vxlan)
+                goto drop;
+
+        /* For backwards compatibility, only allow reserved fields to be
+         * used by VXLAN extensions if explicitly requested.
+         */
+
+}
+
+
+
+
+
+[root@centos-k8s-master ~]# tcpdump -nn -e -i ens224 port 8472
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on ens224, link-type EN10MB (Ethernet), capture size 65535 bytes
+
+
+15:47:14.728101 00:50:56:86:1d:75 > 00:50:56:86:79:3b, ethertype IPv4 (0x0800), length 148: 10.169.72.93.35705 > 10.169.72.98.8472: OTV, flags [I] (0x08), overlay 0, instance 1
+46:4d:ab:d0:69:e1 > 36:3c:de:36:68:58, ethertype IPv4 (0x0800), length 98: 10.244.0.104 > 10.244.1.35: ICMP echo request, id 5376, seq 0, length 64
+
+15:47:14.728625 00:50:56:86:79:3b > 00:50:56:86:1d:75, ethertype IPv4 (0x0800), length 148: 10.169.72.98.42232 > 10.169.72.93.8472: OTV, flags [I] (0x08), overlay 0, instance 1
+36:3c:de:36:68:58 > 46:4d:ab:d0:69:e1, ethertype IPv4 (0x0800), length 98: 10.244.1.35 > 10.244.0.104: ICMP echo reply, id 5376, seq 0, length 64
+
+
+[root@centos-k8s-worker kubernetes]# tcpdump -nn -e -i flannel.1 icmp
+
+15:47:14.160322 46:4d:ab:d0:69:e1 > 36:3c:de:36:68:58, ethertype IPv4 (0x0800), length 98: 10.244.0.104 > 10.244.1.35: ICMP echo request, id 5376, seq 0, length 64
+15:47:14.160424 36:3c:de:36:68:58 > 46:4d:ab:d0:69:e1, ethertype IPv4 (0x0800), length 98: 10.244.1.35 > 10.244.0.104: ICMP echo reply, id 5376, seq 0, length 64
+
+[root@centos-k8s-master ~]# tcpdump -nn -e -i flannel.1 icmp
+
+
+15:47:14.728074 46:4d:ab:d0:69:e1 > 36:3c:de:36:68:58, ethertype IPv4 (0x0800), length 98: 10.244.0.104 > 10.244.1.35: ICMP echo request, id 5376, seq 0, length 64
+15:47:14.728660 36:3c:de:36:68:58 > 46:4d:ab:d0:69:e1, ethertype IPv4 (0x0800), length 98: 10.244.1.35 > 10.244.0.104: ICMP echo reply, id 5376, seq 0, length 64
+
+
+
+

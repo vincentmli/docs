@@ -1,0 +1,187 @@
++------------------------------------------------------------------------------------------+
+|         CNI plugin probing                                                               |
+|                                                                                          |
+|I0424 13:20:28.753453    3043 flags.go:27] FLAG: --network-plugin="cni"                   |
+|I0424 13:20:28.892039    3043 plugins.go:190] Loaded network plugin "cni"                 |
+|I0424 13:20:28.896442    3043 docker_service.go:244] Docker cri networking managed by cni |
++------------------------------------------------------------------------------------------+
+
+
+apiVersion: extensions/v1beta1                           +----------------------------------+
+kind: DaemonSet                                          | "plugins":[                      |          
+metadata:                                                |    {                             |              
+  name: kube-flannel-ds                             +----+      "type":"flannel",           |               
+  namespace: kube-system                            |    |      "delegate": {               |               
+  labels:                                           |    |          "hairpinMode": true,    |                   
+    tier: node                                      |    |          "isDefaultGateway":true |                      
+    app: flannel                                    |    |  ]                               |
+                                                    |    +----------------------------------+
+      initContainers:                               |                                     
+      - name: install-cni                           |    +---------------------------------------------------------------------------------------------+
+        image: quay.io/coreos/flannel:v0.10.0-amd64 |    |   func ProbeNetworkPlugins(cniConfDir string, cniBinDirs []string) []network.NetworkPlugin {|
+        command:                                    |    |        allPlugins := []network.NetworkPlugin{}                                              |
+        - cp                                        |    |        allPlugins = append(allPlugins, cni.ProbeNetworkPlugins(cniConfDir, cniBinDirs)...)  |
+        args:                                       |    |        allPlugins = append(allPlugins, kubenet.NewPlugin(cniBinDirs))                       |
+        - -f                                        |    |        return allPlugins                                                                    |
+        - /etc/kube-flannel/cni-conf.json           |    +------+--------------------------------------------------------------------------------------+
+        - /etc/cni/net.d/10-flannel.conflist--------+           |  +---------------------------------------------------------------------------------------+
+                                                                |  | const (                                                                               |
+                                                                |  |   CNIPluginName  = "cni"                                                              |
+                                                                |  |   DefaultConfDir = "/etc/cni/net.d"                                                   |
+                                                                |  |   DefaultBinDir  = "/opt/cni/bin"                                                     |
+            +---------------------------------------------------+  | )                                                                                     |
+            |                                                      |                                                                                       |
+ +----------+-------------------+                                  | func ProbeNetworkPlugins(confDir string, binDirs []string) []network.NetworkPlugin {  |
+ | cmd/kubelet/app/plugins.go   |                                  |    plugin := &cniNetworkPlugin{                                                       |
+ |     ProbeNetworkPlugins()    |                                  |    defaultNetwork: nil,                                                               |
+ +------------------------------+                                  |    loNetwork:      getLoNetwork(binDirs),                                             |
+                         |                                         | 
+                         |                                         |    confDir:        confDir,                                                           |
+   +------------------------------------------+                    |    binDirs:        binDirs,                                                           |
+   |pkg/kubelet/dockershim/network/cni/cni.go +--------------------+ }                                                                                     |
+   |      ProbeNetworkPlugins()               |                    | plugin.syncNetworkConfig()                                                            |
+   +------------------------------------------+                    | return []network.NetworkPlugin{plugin}                                                |
+                         |                                         +---------------------------------------------------------------------------------------+
+                         |
+     +------------------------------------------+     +--------------- ----------------------------------------------------------+
+     |pkg/kubelet/dockershim/network/cni/cni.go |     |  func (plugin *cniNetworkPlugin) syncNetworkConfig() {                   |
+     |      syncNetworkConfig()                 +-----+      network, err := getDefaultCNINetwork(plugin.confDir, plugin.binDirs)|
+     +--------+---------------------------------+     |      plugin.setDefaultNetwork(network)                                   |
+              |                                       |  }                                                                       |
+              |                                       +--------------------------------------------------------------------------+
+              |
+ +------------+-------------------------------+
+ |pkg/kubelet/dockershim/network/cni/cni.go   |                                                                         
+ |getDefaultCNINetwork()  setDefaultNetwork() +--------------------------------------------------------------------+    
+ +-----+---+----------------------------------+                                                                    |    
+       |                                                                                                           |    
+       |                                                                                       +-------------------+-----------------------------------------------+
+-------+---+-------------------------------------------------------------------------------+   |                                                                   |
+func getDefaultCNINetwork(confDir string, binDirs []string) (*cniNetwork, error) {         |   |func (plugin *cniNetworkPlugin) setDefaultNetwork(n *cniNetwork) { |
+	files, err := libcni.ConfFiles(confDir, []string{".conf", ".conflist", ".json"})   |   |       plugin.Lock()                                               | 
+	for _, confFile := range files {                                                   |   |       plugin.defaultNetwork = n                                   |       
+	    if strings.HasSuffix(confFile, ".conflist") {                                  |   |}
+                confList, err = libcni.ConfListFromFile(confFile)                          |   +-------------------------------------------------------------------+       
+	}                                                                                  |                                                                               
+.............                                                                              |                                                                               
+		network := &cniNetwork{                                                    |                                                                               
+			name:          confList.Name,                                      |                                                                               
+			NetworkConfig: confList,                                           |                                                                               
+			CNIConfig:     &libcni.CNIConfig{Path: binDirs},                   |                                                                               
+		}                                                                          |                                                                               
+		return network, nil                                                        |                                                                               
+	}                                                                                  |                                                                               
+}                                                                                          |                                                                               
+-------------------------------------------------------------------------------------------+
+
+
+
+
+-------------------------------------------------------------------------------------------------------------+
+Kubelet setting up POD network                                                                               |
+                                                                                                             |
+I0424 14:19:20.721443    3043 plugins.go:412] Calling network plugin cni to set up pod "nginx-dz9d8_default" |
+I0424 14:19:20.607685    3043 cni.go:256] About to add CNI network cbr0 (type=flannel)                       |
+                                                                                                             |
+--------------------------------+----------------------------------------------------------------------------+
+                                |                     
+                                |                     
+--------------------------------+------------------------------------------------------------------------------------------------------+
+func (pm *PluginManager) SetUpPod(podNamespace, podName string, id kubecontainer.ContainerID, annotations map[string]string) error {   |
+	defer recordOperation("set_up_pod", time.Now())                                                                                |
+	fullPodName := kubecontainer.BuildPodFullName(podName, podNamespace)                                                           |
+	pm.podLock(fullPodName).Lock()                                                                                                 |
+	defer pm.podUnlock(fullPodName)                                                                                                |
+                                                                                                                                       |
+	glog.V(3).Infof("Calling network plugin %s to set up pod %q", pm.plugin.Name(), fullPodName)                                   |
+	if err := pm.plugin.SetUpPod(podNamespace, podName, id, annotations); err != nil {                                             |
+		return fmt.Errorf("NetworkPlugin %s failed to set up pod %q network: %v", pm.plugin.Name(), fullPodName, err)          |
+	}                                                                                                                              |
+                                                                                                                                       |
+	return nil                                                                                                                     |
+}                                                                                                                                      |
+                                                                                                                                       |
+-----------------------------------+---------------------------------------------------------------------------------------------------+
+                                   | 
+                                   |
+                                   |
+-----------------------------------+---------------------------------------------------------------------------------------------------------+
+func (plugin *cniNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, annotations map[string]string) error { |
+	if err := plugin.checkInitialized(); err != nil {                                                                                    |
+		return err                                                                                                                   |
+	}                                                                                                                                    |
+	netnsPath, err := plugin.host.GetNetNS(id.ID)                                                                                        |
+	if err != nil {                                                                                                                      |
+		return fmt.Errorf("CNI failed to retrieve network namespace path: %v", err)                                                  |
+	}                                                                                                                                    |
+                                                                                                                                             |
+	// Windows doesn't have loNetwork. It comes only with Linux                                                                          |
+	if plugin.loNetwork != nil {                                                                                                         |
+		if _, err = plugin.addToNetwork(plugin.loNetwork, name, namespace, id, netnsPath); err != nil {                              |
+			glog.Errorf("Error while adding to cni lo network: %s", err)                                                         |
+			return err                                                                                                           |
+		}                                                                                                                            |
+	}                                                                                                                                    |
+                                                                                                                                             |
+	_, err = plugin.addToNetwork(plugin.getDefaultNetwork(), name, namespace, id, netnsPath)                                             |
+	if err != nil {                                                                                                                      |
+		glog.Errorf("Error while adding to cni network: %s", err)                                                                    |
+		return err                                                                                                                   |
+	}                                                                                                                                    |
+                                                                                                                                             |
+	return err                                                                                                                           |
+}                                                                                                                                            |
++------------------------------------+-------------------------------------------------------------------------------------------------------+
+                                     |
+                                     |
+-------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------
+func (plugin *cniNetworkPlugin) addToNetwork(network *cniNetwork, podName string, podNamespace string, podSandboxID kubecontainer.ContainerID, podNetnsPath string) (cnitypes.Result, error) {
+	rt, err := plugin.buildCNIRuntimeConf(podName, podNamespace, podSandboxID, podNetnsPath)
+	if err != nil {
+		glog.Errorf("Error adding network when building cni runtime conf: %v", err)
+		return nil, err
+	}
+
+	netConf, cniNet := network.NetworkConfig, network.CNIConfig
+	glog.V(4).Infof("About to add CNI network %v (type=%v)", netConf.Name, netConf.Plugins[0].Network.Type)
+	res, err := cniNet.AddNetworkList(netConf, rt)
+	if err != nil {
+		glog.Errorf("Error adding network: %v", err)
+		return nil, err
+	}
+
+	return res, nil
+}
+
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                              
+-------------------------------------------------------------------------------------------------------------+                                
+// AddNetworkList executes a sequence of plugins with the ADD command                                        |
+func (c *CNIConfig) AddNetworkList(list *NetworkConfigList, rt *RuntimeConf) (types.Result, error) {         |
+	var prevResult types.Result                                                                          |
+	for _, net := range list.Plugins {                                                                   |
+		pluginPath, err := invoke.FindInPath(net.Network.Type, c.Path)                               |
+		if err != nil {                                                                              |
+			return nil, err                                                                      |
+		}                                                                                            |
+                                                                                                             |
+		newConf, err := buildOneConfig(list, net, prevResult, rt)                                    |
+		if err != nil {                                                                              |
+			return nil, err                                                                      |
+		}                                                                                            |
+                                                                                                             |
+		prevResult, err = invoke.ExecPluginWithResult(pluginPath, newConf.Bytes, c.args("ADD", rt))  |
+		if err != nil {                                                                              |
+			return nil, err                                                                      |
+		}                                                                                            |
+	}                                                                                                    |
+                                                                                                             |
+	return prevResult, nil                                                                               |
+}                                                                                                            |                                 
+                                                                                                             |
+-------------------------------------------------------------------------------------------------------------+
+
+
+
+

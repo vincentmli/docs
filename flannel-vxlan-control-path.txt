@@ -1,0 +1,260 @@
+
+Control Plane: cluster/kubectl.sh apply -f kube-flannel.yaml -n kube-system
+                                                  +----------------------------------+        +-----------------------------------------+
+                                                  | kind: ConfigMap                  |        |kind:Daemonset                           | +-------------------------+
+                                                  | data:                            |        |  initContainers:                        | |plugins                  |
+                                                  |     cni-conf.json: |             |        |    - cp -f                              | |  type:flannel           |
+                                                  |     "plugins":[                  |        |    - /etc/kube/flannel.conflist         | |  delegate:              |
+                         +------------+           |         {"type": "flannel"}      |        |    - /etc/cni/net.d/10-flannel.conflist +>+    hairpinMode:true     |   
+                         | kubectl    +<----------+     net-conf.json: |             |        |   containers:                           | |    isDefaultGateway:true|
+                         +-----+-----++           |       "Network": "10.244.0.0.16" |        |    - /opt/bin/flanneld                  | +-----+-------------------+
+                               |     ^            |       "Backend":{"Type":"vxlan"} |        |    - --v=12                             |       |
+ Master node                   |     |            +----------------------------------+        |    - --iface=ens224                     |       |
+                               |     +--------------------------------------------------------+    - --ip-masq                          |       |
++------------------------------+--------------------------------------------+                 |    - --kube-subnet-mgr                  |       |      
+|                              |                                            |                 +-----------------------------------------+       |
+|                              |                                            |                                                                   |     
+|                              v                                            |                                    +------------------------------+     
+|            +------------------------------------+                         |                    Worker node     |                                              
+|            |                                    |<---------------------+  |                                    |                              
+|            |                                    |                      |  |                    +---------------+-----------------------------------ipvs0--------------+
+|            |             API Server             +-----------------+    +---------------------------------------v--------------+                      |                |
+|         +->|                                    |                 |       |                    |        +---------------+     |       +----------------+              |
+|         |  |                                    +<----------------------------------------------------- +   kubelet     |     +------>+    kube-proxy  |              |
+|         |  |                                    |                 |       |                    |        +----+--+-------+             +-------+---+----+              |
+|         |  +--------------------+---------------+<------------+   |       |                    |             |  |                             |                       |
+|         |                       ^                             |   |       |                    |             |  |   +-------------------------+                       |
+|         |                       +----------------+            |   |       |                    |      +------+--+---|-------------------------------------------+     |
+|         |                                        |            |   |       |                    |      |      |  |   |                                           |     |
+|    +----+--------------------+       +-----------+-------+    +----------------------------------------------+--+-------------------+                    docker |     |
+|    |                         |       |                   |        |       | +--------------+   |      |      |  |   |               |                           |     |
+|    |  controller-manager     |       |                   |        |       | |/run/flannel/ |   |      |      |  +---+---------------+---+                       |     |
+|    |  (replication,          |       |   scheduler       |        |       | |subnet.env    |   |      |      v      v               |   v                       |     |
+|    |   namespace             |       |                   |        |       | |FLANNE_NETWORK|   |      |     +-------+-------+       |   ++---------------+      |     |
+|    |   serviceaccounts,...)  |       |                   |        |       | |=10.244.0.0/16|   |      |     |               |       |   |                |      |     |
+|    |                         |       |                   |        |       | |FLANNEL_SUBNET|   |      |     |  Nginx        |       |   | kube-flannel   |      |     |
+|    |                         |       |                   |        |       | |=10.244.0.1/24|   |      |     +               |       +-->+                |      |     |
+|    |                         |       |                   |        |       | |FLANNEL_MTU   |   |      |     |               |           |                |      |     |
+|    +-------------------------+       +-------------------+        |       | |=1450         |   |      |     |               |           |                |      |     |
+|                                                                   |       | |FLANNEL_IPMASQ|   |      |     +---------------+           +---------+---+--+      |     |
+|                                                                   v       | |=true         |   |      |       Pod                           Pod   |   |         |     |
+|                                                              +----+----+  | +------+-------+   |      |                                           |   |         |     |
+|                                                              |         |  |        ^--------------------------------------------------------------+   |         |     |
+|                                                              |  etcd   |  |                    |      |                                               |         |     |
+|                                                              |         |  |                    |      +-----------------------------------------------|---------+     |
+|                                                              +---------+  |                    |             root namespace                           |               |
+|                                                                           |                    |                                                      v               |
++---------------------------------------------------------------------------+                    +----------------------ens224------------------------flannel.1---------+
+ 
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kube-flannel-cfg
+  namespace: kube-system
+  labels:
+    tier: node
+    app: flannel
+data:
+  cni-conf.json: | # for kubelet to probe/invoke CNI plugin
+    {
+      "name": "cbr0",
+      "plugins": [
+        {
+          "type": "flannel",
+          "delegate": {
+            "hairpinMode": true,
+            "isDefaultGateway": true
+          }
+        },
+        {
+          "type": "portmap",
+          "capabilities": {
+            "portMappings": true
+          }
+        }
+      ]
+    }
+  net-conf.json: | # for flanneld to get subnet release and setup vxlan network
+    {
+      "Network": "10.244.0.0/16",
+      "Backend": {
+        "Type": "vxlan"
+      }
+    }
+
+https://github.com/coreos/flannel
+
+How it works
+
+1,
+
+Flannel runs a small, single binary agent called flanneld on each host, and is responsible for allocating a subnet lease to each host out of a larger, 
+preconfigured address space. Flannel uses either the Kubernetes API or etcd directly to store the network configuration, the allocated subnets, 
+and any auxiliary data (such as the host's public IP). Packets are forwarded using one of several backend mechanisms including VXLAN and various cloud integrations.
+
+[root@centos-k8s-master kubernetes]# cat /run/flannel/subnet.env
+FLANNEL_NETWORK=10.244.0.0/16
+FLANNEL_SUBNET=10.244.0.1/24
+FLANNEL_MTU=1450
+FLANNEL_IPMASQ=true
+
+
+2,
+
+When in flannel backend VXLAN mode, flannel creates VXLAN type interface flannel.<VNI> on each node and the flannel.<VNI> MAC as VTEP MAC.
+
+https://github.com/coreos/flannel/blob/master/backend/vxlan/vxlan.go
+
+// 1) create routing table entry for the remote subnet. It goes via the vxlan device but also specifies a next hop (of the remote flannel host).
+// 2) Create a static ARP entry for the remote flannel host IP address (and the VTEP MAC)
+// 3) Create an FDB entry with the VTEP MAC and the public IP of the remote flannel daemon.
+
+
+
+https://github.com/coreos/flannel/blob/master/subnet/config.go
+
+type Config struct {
+	Network     ip.IP4Net
+	SubnetMin   ip.IP4
+	SubnetMax   ip.IP4
+	SubnetLen   uint
+	BackendType string          `json:"-"`
+	Backend     json.RawMessage `json:",omitempty"`
+}
+
+https://github.com/coreos/flannel/blob/master/subnet/kube/kube.go
+
+type kubeSubnetManager struct {
+	client         clientset.Interface
+	nodeName       string
+	nodeStore      listers.NodeLister
+	nodeController cache.Controller
+	subnetConf     *subnet.Config
+	events         chan subnet.Event
+}
+
+func (ksm *kubeSubnetManager) GetNetworkConfig(ctx context.Context) (*subnet.Config, error) {
+	return ksm.subnetConf, nil
+}
+
+
+https://github.com/coreos/flannel/blob/master/main.go
+
+func getConfig(ctx context.Context, sm subnet.Manager) (*subnet.Config, error) {
+	// Retry every second until it succeeds
+	for {
+		config, err := sm.GetNetworkConfig(ctx)
+		if err != nil {
+			log.Errorf("Couldn't fetch network config: %s", err)
+		} else if config == nil {
+			log.Warningf("Couldn't find network config: %s", err)
+		} else {
+			log.Infof("Found network config - Backend type: %s", config.BackendType)
+			return config, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errCanceled
+		case <-time.After(1 * time.Second):
+			fmt.Println("timed out")
+		}
+	}
+}
+
+// Fetch the network config (i.e. what backend to use etc..).
+	config, err := getConfig(ctx, sm)
+	if err == errCanceled {
+		wg.Wait()
+		os.Exit(0)
+	}
+
+	// Create a backend manager then use it to create the backend and register the network with it.
+	bm := backend.NewManager(ctx, sm, extIface)
+	be, err := bm.GetBackend(config.BackendType)
+	if err != nil {
+		log.Errorf("Error fetching backend: %s", err)
+		cancel()
+		wg.Wait()
+		os.Exit(1)
+	}
+
+	bn, err := be.RegisterNetwork(ctx, wg, config)
+	if err != nil {
+		log.Errorf("Error registering network: %s", err)
+		cancel()
+		wg.Wait()
+		os.Exit(1)
+	}
+
+https://github.com/coreos/flannel/blob/master/backend/common.go
+
+
+
+/ Besides the entry points in the Backend interface, the backend's New()
+// function receives static network interface information (like internal and
+// external IP addresses, MTU, etc) which it should cache for later use if
+// needed.
+type Backend interface {
+	// Called when the backend should create or begin managing a new network
+	RegisterNetwork(ctx context.Context, wg sync.WaitGroup, config *subnet.Config) (Network, error)
+}
+
+https://github.com/coreos/flannel/blob/master/backend/vxlan/vxlan.go
+
+func (be *VXLANBackend) RegisterNetwork(ctx context.Context, wg sync.WaitGroup, config *subnet.Config) (backend.Network, error) {
+	// Parse our configuration
+	cfg := struct {
+		VNI           int
+		Port          int
+		GBP           bool
+		DirectRouting bool
+	}{
+		VNI: defaultVNI,
+	}
+
+	if len(config.Backend) > 0 {
+		if err := json.Unmarshal(config.Backend, &cfg); err != nil {
+			return nil, fmt.Errorf("error decoding VXLAN backend config: %v", err)
+		}
+	}
+	log.Infof("VXLAN config: VNI=%d Port=%d GBP=%v DirectRouting=%v", cfg.VNI, cfg.Port, cfg.GBP, cfg.DirectRouting)
+
+	devAttrs := vxlanDeviceAttrs{
+		vni:       uint32(cfg.VNI),
+		name:      fmt.Sprintf("flannel.%v", cfg.VNI),
+		vtepIndex: be.extIface.Iface.Index,
+		vtepAddr:  be.extIface.IfaceAddr,
+		vtepPort:  cfg.Port,
+		gbp:       cfg.GBP,
+	}
+
+	dev, err := newVXLANDevice(&devAttrs)
+	if err != nil {
+		return nil, err
+	}
+	dev.directRouting = cfg.DirectRouting
+
+	subnetAttrs, err := newSubnetAttrs(be.extIface.ExtAddr, dev.MACAddr())
+	if err != nil {
+		return nil, err
+	}
+
+	lease, err := be.subnetMgr.AcquireLease(ctx, subnetAttrs)
+	switch err {
+	case nil:
+	case context.Canceled, context.DeadlineExceeded:
+		return nil, err
+	default:
+		return nil, fmt.Errorf("failed to acquire lease: %v", err)
+	}
+
+	// Ensure that the device has a /32 address so that no broadcast routes are created.
+	// This IP is just used as a source address for host to workload traffic (so
+	// the return path for the traffic has an address on the flannel network to use as the destination)
+	if err := dev.Configure(ip.IP4Net{IP: lease.Subnet.IP, PrefixLen: 32}); err != nil {
+		return nil, fmt.Errorf("failed to configure interface %s: %s", dev.link.Attrs().Name, err)
+	}
+
+	return newNetwork(be.subnetMgr, be.extIface, dev, ip.IP4Net{}, lease)
+}
