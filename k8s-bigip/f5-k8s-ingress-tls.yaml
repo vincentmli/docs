@@ -1,0 +1,22 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: example.com 
+  namespace: default
+  annotations:
+  # See the k8s-bigip-ctlr documentation for information about
+  # all Ingress Annotations
+  # http://clouddocs.f5.com/products/connectors/k8s-bigip-ctlr/latest/#supported-ingress-annotations
+    virtual-server.f5.com/ip: "10.244.32.18"
+    virtual-server.f5.com/partition: "k8s"
+    ingress.kubernetes.io/ssl-redirect: "true"
+    ingress.kubernetes.io/allow-http: "false"
+spec:
+  tls:
+    # Provide the name of the BIG-IP SSL profile you want to use.
+    - secretName: /test/default-test
+  backend:
+    # Provide the name of a single Kubernetes Service you want to expose to external
+    # traffic using TLS
+    serviceName: nginxservice
+    servicePort: 443 

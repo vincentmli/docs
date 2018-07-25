@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: busybox-echo-server 
+spec:
+  replicas: 2
+  selector:
+    app: busybox-echo-server 
+  template:
+    metadata:
+      name: busybox-echo-server 
+      labels:
+        app: busybox-echo-server 
+    spec:
+      containers:
+      - image: jdkelley/busybox-echo-server
+        command:
+          - sleep
+          - "3600"
+        imagePullPolicy: IfNotPresent
+        name: busybox-echo-server 
+      restartPolicy: Always
+

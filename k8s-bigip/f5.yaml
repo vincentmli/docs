@@ -1,0 +1,129 @@
+#
+# https://github.com/kubernetes/community/blob/master/contributors/devel/running-locally.md
+# change kubernetes/hack/local-up-cluster.sh all 127.0.0.1 to private ip 192.168.1.1 that external k8s BIGIP can reach to
+
+# http://clouddocs.f5.com/containers/v2/kubernetes/kctlr-app-install.html
+# step 1:
+#create BIGIP login secret first
+#kubectl create secret generic bigip-login --namespace kube-system --from-literal=username=admin --from-literal=password=admin
+
+# step 2:
+# cluster/kubectl.sh apply -f following yaml
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: test-bigip-controller-1
+  name: test-bigip-controller-1
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-bigip-controller-1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: test-bigip-controller-1
+    spec:
+      serviceAccountName: bigip-ctlr-serviceaccount
+      containers:
+      - args:
+        - --bigip-partition
+        - test
+        - --bigip-url
+        - 192.168.1.2
+        - --bigip-username
+        - admin
+        - --bigip-password
+        - admin
+        - --verify-interval
+        - "30"
+        - --namespace
+        - default
+        - --node-poll-interval
+        - "1"
+        - --pool-member-type
+        - nodeport
+        - --log-level
+        - INFO
+        command:
+        - /app/bin/k8s-bigip-ctlr
+        image: f5networks/k8s-bigip-ctlr:1.4.0
+        imagePullPolicy: Always
+        name: test-bigip-controller-1
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128M
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bigip-ctlr-serviceaccount
+  namespace: kube-system
+
+---
+
+# for use in k8s clusters using RBAC
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: bigip-ctlr-clusterrole
+rules:
+- apiGroups:
+  - ""
+  - "extensions"
+  resources:
+  - nodes
+  - services
+  - endpoints
+  - namespaces
+  - ingresses
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  - "extensions"
+  resources:
+  - configmaps
+  - events
+  - ingresses/status
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - create
+  - patch
+
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: bigip-ctlr-clusterrole-binding
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bigip-ctlr-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: bigip-ctlr-serviceaccount
+  namespace: kube-system

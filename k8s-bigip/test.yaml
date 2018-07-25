@@ -1,0 +1,62 @@
+kind: ConfigMap
+
+apiVersion: v1
+
+metadata:
+  name: http.vs
+  namespace: default
+  labels:
+    f5type: virtual-server
+
+data:
+
+  schema: "f5schemadb://bigip-virtual-server_v0.1.7.json"
+
+  data: |
+
+    {
+
+      "virtualServer": {
+
+        "backend": {
+
+          "servicePort": 80,
+
+          "serviceName": "nginxservice",
+
+          "healthMonitors": [{
+
+            "interval": 30,
+
+            "protocol": "http",
+
+            "send": "GET /\r\n",
+
+            "timeout": 120
+
+          }]
+
+        },
+
+        "frontend": {
+
+          "virtualAddress": {
+
+            "port": 80,
+
+            "bindAddr": "10.169.72.166"
+
+          },
+
+          "partition": "test",
+
+          "balance": "least-connections-member",
+
+          "mode": "http"
+
+        }
+
+      }
+
+    }
+
