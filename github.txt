@@ -1,0 +1,38 @@
+1, github fork/clone 
+
+https://gist.github.com/Chaser324/ce0505fbed06b947d962
+
+a, fork and clone to local dev box
+b, cd local clone 
+ git remote add upstream https://github.com/UPSTREAM-USER/ORIGINAL-PROJECT.git
+c, git fetch upstream
+d, git checkout master
+e, git merge upstream/master
+f, git checkout <dev-branch>
+work, work, work, test, test, test
+g, commit and push
+git commit; git push origin <dev-branch> 
+
+
+2, github cherry-pick for PR
+
+https://poanchen.github.io/blog/2017/11/12/How-to-create-a-GitHub-pull-request-with-a-specific-commits
+
+git remote add upstream https://github.com/upstream_github_username/upstream_github_repo_name.git
+git checkout -b new-branch-name-for-PR upstream/master
+git cherry-pick <dev-branch commit id>
+git push -u origin new-branch-name-for-PR
+
+then go to github to do compare and create pull request
+
+for example:
+
+commit in dev branch:  						git commit -a (ID a323ae9f7df)
+push dev branch to github: 					git push origin vli-dev
+checkout master branch:  					git checkout master
+checkout new branch for PR from upstream master: 		git checkout -b vli-PR upstream/master
+cherry pick dev branch commit id:  				git cherry-pick a323ae9f7df
+push new branch for PR to github:  				git push -u origin vli-PR
+
+
+
