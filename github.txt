@@ -34,5 +34,14 @@ checkout new branch for PR from upstream master: 		git checkout -b vli-PR upstre
 cherry pick dev branch commit id:  				git cherry-pick a323ae9f7df
 push new branch for PR to github:  				git push -u origin vli-PR
 
+remove the pull request branch when pull request is merged to upstream
 
+$ git branch
+* master
+  vli-PR
+  vli-dev
 
+$ git branch -D vli-PR
+Deleted branch vli-PR (was 2ab80a2).
+
+$ git push --delete origin vli-PR
