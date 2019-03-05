@@ -1,0 +1,385 @@
+XML  template to setup BIGIP VE with SR-IOV 10G NIC
+
+Step-by-step guide
+Add the steps involved:
+
+1, install KVM packages
+
+#apt-get install qemu-kvm libvirt-bin ubuntu-vm-builder bridge-utils
+2, bridge interface for management interface
+# This file describes the network interfaces available on your system
+
+# and how to activate them. For more information, see interfaces(5).
+
+ 
+
+# The loopback network interface
+
+auto lo br0
+
+iface lo inet loopback
+
+ 
+
+# The primary network interface
+
+iface em1 inet manual
+
+iface br0 inet static
+
+        bridge_ports em1
+
+        address 10.3.72.3
+
+        netmask 255.255.0.0
+
+        network 10.3.0.0
+
+        broadcast 10.3.255.255
+
+        gateway 10.3.254.254
+
+ 3 grub config to enable SR-IOV and allow unsafe interrupt
+# grep intel /etc/default/grub
+
+GRUB_CMDLINE_LINUX_DEFAULT="intel_iommu=on ixgbe.max_vfs=2 modprobe.blacklist=ixgbevf"
+
+# cat /etc/modprobe.d/kvm.conf
+
+options kvm allow_unsafe_assigned_interrupts=1
+
+#update-grub
+
+4, reboot ubuntu 14.04 and ip link list to show the VF
+# ip link list p2p1
+
+7: p2p1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000
+
+    link/ether e8:ea:6a:06:1b:1a brd ff:ff:ff:ff:ff:ff
+
+    vf 0 MAC 00:00:00:00:00:00, spoof checking on, link-state auto
+
+    vf 1 MAC 00:00:00:00:00:00, spoof checking on, link-state auto
+
+5, BIGIP xml template (adjust the  interface type hostdev pci domain, bus, slot, function accordingly with hex with the hypvervisor)
+ 
+
+<domain type='kvm'>
+
+  <name>bigip-sriov</name>
+
+  <memory unit='KiB'>32108864</memory>
+
+  <currentMemory unit='KiB'>32108864</currentMemory>
+
+  <vcpu placement='static'>4</vcpu>
+
+  <os>
+
+    <type arch='x86_64' machine='pc-i440fx-trusty'>hvm</type>
+
+    <boot dev='hd'/>
+
+  </os>
+
+  <features>
+
+    <acpi/>
+
+    <apic/>
+
+    <pae/>
+
+  </features>
+
+  <clock offset='utc'/>
+
+  <on_poweroff>destroy</on_poweroff>
+
+  <on_reboot>restart</on_reboot>
+
+  <on_crash>restart</on_crash>
+
+  <devices>
+
+    <emulator>/usr/bin/kvm-spice</emulator>
+
+    <disk type='file' device='disk'>
+
+      <driver name='qemu' type='qcow2'/>
+
+      <source file='/var/lib/libvirt/images/BIGIP-12.1.0.0.0.1434.qcow2'/>
+
+      <target dev='vda' bus='virtio'/>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+
+    </disk>
+
+    <controller type='usb' index='0'>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+
+    </controller>
+
+    <controller type='pci' index='0' model='pci-root'/>
+
+    <controller type='ide' index='0'>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x1'/>
+
+    </controller>
+
+    <interface type='bridge'>
+
+      <source bridge='br0'/>
+
+      <model type='virtio'/>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+
+    </interface>
+
+    <interface type='hostdev' managed='yes'>
+
+      <source>
+
+        <address type='pci' domain='0x0000' bus='0x04' slot='0x10' function='0x0'/>
+
+      </source>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+
+    </interface>
+
+    <serial type='pty'>
+
+      <target port='0'/>
+
+    </serial>
+
+    <console type='pty'>
+
+      <target type='serial' port='0'/>
+
+    </console>
+
+    <input type='mouse' bus='ps2'/>
+
+    <input type='keyboard' bus='ps2'/>
+
+    <graphics type='vnc' port='-1' autoport='yes'/>
+
+    <video>
+
+      <model type='cirrus' vram='9216' heads='1'/>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x0'/>
+
+    </video>
+
+    <memballoon model='virtio'>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x06' function='0x0'/>
+
+    </memballoon>
+
+  </devices>
+
+</domain>
+
+ 6, create BIGIP VE
+#virsh define <xml template file>
+
+#virsh start <domain>
+
+#virsh console bigip-sriov
+
+ 7 check BIGIP VE eth1 interface MAC address and set it to VF mac address in ubuntu
+on VE
+
+# ip link list eth1
+
+3: eth1: <BROADCAST,MULTICAST,ALLMULTI,PROMISC,UP,LOWER_UP> mtu 1500 qdisc mq state UP qlen 1000
+
+    link/ether 2e:d1:59:b0:fb:76 brd ff:ff:ff:ff:ff:ff
+
+ on ubuntu
+
+ #ip link set p2p1 vf 0 mac 2E:D1:59:B0:FB:76
+
+8 setup base BIGIP VE config and the network to/from selfip should be up and reachable
+ 
+
+Hardware: Dell Poweredge R710 72GB RAM, Intel 82599ES NIC
+
+OS: ubuntu 14.04.1 kernel 3.13.0-32-generic
+
+IXGBE Driver: 3.15.1-k
+
+BIGIP VE  guest: 12.1.0
+
+
+lab steps summarized from  SR C2186205/
+
+be aware to blacklist ixgbevf from grub, so ixgbevf is not loaded on host to create nic interface for the vfs like p2p1_<#vf>
+
+virsh nodedev-list --tree to display the PCI info and Linux interface
+
+  +- pci_0000_00_05_0
+
+  |   |
+
+  |   +- pci_0000_04_00_0
+
+  |   |   |
+
+  |   |   +- net_p2p1_e8_ea_6a_06_1b_1a
+
+  |   |
+
+  |   +- pci_0000_04_00_1
+
+  |   |   |
+
+  |   |   +- net_p2p2_e8_ea_6a_06_1b_1b
+
+  |   |
+
+  |   +- pci_0000_04_10_0
+
+  |   +- pci_0000_04_10_1
+
+  |   +- pci_0000_04_10_2
+
+  |   +- pci_0000_04_10_3
+
+  |   +- pci_0000_04_10_4
+
+  |   +- pci_0000_04_10_5
+
+  |   +- pci_0000_04_10_6
+
+  |   +- pci_0000_04_10_7
+
+ 
+
+root@r710:/home/dpdk# virsh nodedev-dumpxml pci_0000_04_10_0
+<device>
+  <name>pci_0000_04_10_0</name>
+  <path>/sys/devices/pci0000:00/0000:00:05.0/0000:04:10.0</path>
+  <parent>pci_0000_00_05_0</parent>
+  <driver>
+    <name>pci-stub</name>
+  </driver>
+  <capability type='pci'>
+    <domain>0</domain>
+    <bus>4</bus>
+    <slot>16</slot>
+    <function>0</function>
+    <product id='0x10ed'>82599 Ethernet Controller Virtual Function</product>
+    <vendor id='0x8086'>Intel Corporation</vendor>
+    <capability type='phys_function'>
+      <address domain='0x0000' bus='0x04' slot='0x00' function='0x0'/>
+    </capability>
+    <iommuGroup number='33'>
+      <address domain='0x0000' bus='0x04' slot='0x10' function='0x0'/>
+    </iommuGroup>
+  </capability>
+</device>
+
+
+be aware the PCI even number function pci_0000_04_10_<event number> belongs to the first PF port as p2p1
+
+pci_0000_04_10_<odd number> belongs to second PF port p2p2
+
+ 
+
+be aware to two ways define VF for guest, use hostdev or interface, both would work if number of VF < 32, but if number of VF > = 32. using interface would cause https://bugzilla.redhat.com/show_bug.cgi?id=1040626#c7 for "error: internal error: missing IFLA_VF_INFO in netlink response"
+
+ 
+
+root@r710:/home/dpdk# diff -u bigip-sriov-running.xml.orig bigip-sriov-running.xml
+--- bigip-sriov-running.xml.orig        2016-08-16 10:52:19.608884381 -0700
++++ bigip-sriov-running.xml     2016-08-16 11:01:45.168911753 -0700
+@@ -47,22 +47,22 @@
+       <alias name='net0'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+     </interface>
+-    <interface type='hostdev' managed='yes'>
++    <hostdev mode='subsystem' type='pci' managed='yes'>
+       <driver name='kvm'/>
+       <source>
+-        <address type='pci' domain='0x0000' bus='0x04' slot='0x10' function='0x0'/>
++        <address domain='0x0000' bus='0x04' slot='0x10' function='0x0'/>
+       </source>
+       <alias name='hostdev0'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+-    </interface>
+-    <interface type='hostdev' managed='yes'>
++    </hostdev>
++    <hostdev mode='subsystem' type='pci' managed='yes'>
+       <driver name='kvm'/>
+       <source>
+-        <address type='pci' domain='0x0000' bus='0x04' slot='0x10' function='0x2'/>
++        <address  domain='0x0000' bus='0x04' slot='0x10' function='0x2'/>
+       </source>
+       <alias name='hostdev1'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x08' function='0x0'/>
+-    </interface>
++    </hostdev>
+
+ 
+
+ISSUE:
+
+1 upgraded hypvervisor to ubuntu 16.04 and trying to create VM with existing xml template and with a ubuntu 14.04 virtual image, got error:
+
+
+root@Dell710:/home/dpdk# virsh define dpdk-sriov.xml
+Domain dpdk-sriov defined from dpdk-sriov.xml
+
+root@Dell710:/home/dpdk# virsh list --all
+ Id    Name                           State
+----------------------------------------------------
+ -     dpdk-sriov                     shut off
+
+root@Dell710:/home/dpdk# virsh start dpdk-sriov
+error: Failed to start domain dpdk-sriov
+error: Path '/dev/vfio/34' is not accessible: No such file or directory
+
+find https://bugzilla.redhat.com/show_bug.cgi?id=1066825#c15 and the easy fix is to add managed="yes" in the hostdev
+
+    <interface type='hostdev' managed="yes">
+
+      <mac address='52:54:00:4c:86:ba'/>
+
+      <source>
+
+        <address type='pci' domain='0x0000' bus='0x04' slot='0x10' function='0x0'/>
+
+      </source>
+
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+
+    </interface>
+
+2, got another error on ubuntu 16.04.1 LTS
+
+error: Failed to start domain bigip-sriov
+
+error: internal error: process exited while connecting to monitor: 2017-09-12T17:05:03.685203Z qemu-system-x86_64: -device vfio-pci,host=04:10.0,id=hostdev0,bus=pci.0,addr=0x7: vfio: failed to set iommu for container: Operation not permitted
+
+2017-09-12T17:05:03.685242Z qemu-system-x86_64: -device vfio-pci,host=04:10.0,id=hostdev0,bus=pci.0,addr=0x7: vfio: failed to setup container for group 34
+
+2017-09-12T17:05:03.685253Z qemu-system-x86_64: -device vfio-pci,host=04:10.0,id=hostdev0,bus=pci.0,addr=0x7: vfio: failed to get group 34
+
+2017-09-12T17:05:03.685266Z qemu-system-x86_64: -device vfio-pci,host=04:10.0,id=hostdev0,bus=pci.0,addr=0x7: Device initialization failed
+
+fixed it by add vfio option below and add vfio in /etc/modules
+
+root@dell710:~# cat /etc/modprobe.d/vfio.conf
+
+options vfio_iommu_type1 allow_unsafe_interrupts=1
+
+ 
