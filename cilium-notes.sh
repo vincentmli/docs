@@ -87,8 +87,8 @@ root@cilium-fl-worker:/home/cilium# cilium endpoint get 2775
                                          
                                                    
                                                   +-------------------------------+
-                   (ingress from-overlay          |                               |
-                    egress to-overlay)            |                               |
+                   (ingress from-overlay          |                               |          ingress from-overlay
+                    egress to-overlay)            |                               |          egress to-overlay 
                      bpf/bpf_overlay.c            |                               |
                                                   |                               |       
       +---------------cilium_vxlan-------------ens192-+-----------+         +---ens192----------cilium_vxlan-+--------+
@@ -98,13 +98,13 @@ root@cilium-fl-worker:/home/cilium# cilium endpoint get 2775
       |                     |                                     |         |                      |                  |
       |                     |                                     |         |                      |                  |
       |                     |                                     |         |                      |                  |
-      | 		lxc80a882bfd44a@if18                      |         |                      |                  |
+      | 		lxc80a882bfd44a@if18                      |         |                      |  to-container    |
       |                     |                                     |         |                      |                  |
-      |                     | (ingress from-container             |         |                      |                  |
-      |                     |  egress  to-container)              |         |                      |                  |
+      |                     | (ingress from-container             |         |               lxcae556c40f20c@if12      |             |                     |                                     |         |                      |                  |
+      |                     |  egress  to-container)              |         |                      | from-container   |
       | 		    |  bpf/bpf_lxc.c                      |         |                      |                  |
-      |    pod              |                                     |         |                 +----+----+             |
-      |   +-------+  +--eth0@if19-+                               |         |    pod          |  nginx  |             |             |   |cilium |  | busybox    |                               |         |  +-------+      |  pod    |                |
+      |    pod              |                                     |         |                 +-eth0@if13             |
+      |   +-------+  +--eth0@if19-+                               |         |    pod          |  nginx  |             |             |   |cilium |  | busybox    |                               |         |  +-------+      |  pod    |             |
       |   |agent  |  | Pod        |                               |         |  |cilium |      +---------+             |
       |   +-------+  +------------+                               |         |  |agent  |                              |
       |                                                           |         |  +-------+                              |
