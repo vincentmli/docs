@@ -94,8 +94,8 @@ root@cilium-fl-worker:/home/cilium# cilium endpoint get 2775
       +---------------cilium_vxlan-------------ens192-+-----------+         +---ens192----------cilium_vxlan-+--------+
       |                     |               (ingress from-netdev  |         |                      |                  |
       |                     |                egress to-netdev)    |         |                      |                  |
-      |                     |                bpf/bpf_host.c       |         |                      |                  |
-      |                     |                                     |         |                      |                  |
+      |  Node               |                bpf/bpf_host.c       |         |   Node               |                  |
+      |  cilium-bigip       |                                     |         |   cilium-fl-worker   |                  |
       |                     |                                     |         |                      |                  |
       |                     |                                     |         |                      |                  |
       | 		lxc80a882bfd44a@if18                      |         |                      |  to-container    |
@@ -202,21 +202,27 @@ bpf_overlay.c  |- handle_ipv4(ctx, &src_identity)
                      |       |   |- __lookup_ip4_endpoint(__u32 ip)
                      |       |        |-map_lookup_elem(&ENDPOINTS_MAP, &key)
                      |- if(ep)
-                     |       |- ipv4_local_delivery(ctx, ETH_HLEN, *identity, ip4, ep,..)
-                     |           |-ipv4_l3(ctx, l3_off, (__u8 *) &router_mac, (__u8 *) &lxc_mac,ip4)
-                     |           |- redirect_ep(ep->ifindex, from_host)
-                     |           |    |- redirect(ifindex, 0)
-                     |           |    |- redirect_peer(ifindex, 0)
-                     |           |    |     |- __section("to-container")
-                     |           |             handle_to_container(struct __ctx_buff *ctx)
-                     |           |                 |- validate_ethertype(ctx, &proto)
-                     |           |                 |- send_trace_notify(ctx, trace, identity, 0, 0,
-                     |           |                 |- switch (proto)
-                     |           |                      |- case bpf_htons(ETH_P_IP):
-                     |           |                           |- tail_ipv4_to_endpoint
-                     |           |                                |- ipv4_policy
-                     |           |                                      |- redirect_ep(ifindex, from_host) 
-                     |           |-tail_call_dynamic(ctx, &POLICY_CALL_MAP, ep->lxc_id)
+bpf/lib/l3.h         |       |- ipv4_local_delivery(ctx, ETH_HLEN, *identity, ip4, ep,..)
+                     |           |- ipv4_l3(ctx, l3_off, (__u8 *) &router_mac, (__u8 *) &lxc_mac,ip4)
+                     |           |- if #if defined(USE_BPF_PROG_FOR_INGRESS_POLICY) && \
+                     |           |          !defined(FORCE_LOCAL_POLICY_EVAL_AT_SOURCE)
+                     |           |       redirect_ep(ep->ifindex, from_host)
+                     |           |         |- redirect(ifindex, 0)
+                     |           |         |- redirect_peer(ifindex, 0)
+                     |           |- else 
+		     |           |     tail_call_dynamic(ctx, &POLICY_CALL_MAP, ep->lxc_id)
+                     |           |      |- __section("to-container")
+                     |           |         handle_to_container(struct __ctx_buff *ctx)
+                     |           |          |- validate_ethertype(ctx, &proto)
+                     |           |             |- send_trace_notify(ctx, trace, identity, 0, 0,
+                     |           |             |- switch (proto)
+                     |           |                 |- case bpf_htons(ETH_P_IP):
+                     |           |                     |- tail_ipv4_to_endpoint
+                     |           |                         |- ipv4_policy
+		     |           |                              |- ret = ct_lookup4(get_ct_map4(&tuple) 
+		     |           |                              |- verdict = policy_can_access_ingress(ctx, src_label...)
+		     |           |                              |- send_trace_notify4(ctx, TRACE_TO_LXC,
+                     |           |                              |- redirect_ep(ifindex, from_host) 
                      |- to_host:
                                  |- ipv4_l3(ctx, ETH_HLEN, (__u8 *)&router_mac.addr,...)
                                  |- redirect(HOST_IFINDEX, 0);
