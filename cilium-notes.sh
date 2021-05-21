@@ -115,11 +115,12 @@ root@cilium-fl-worker:/home/cilium# cilium endpoint get 2775
 
 egress:
 
-bpf_overlay.c
+bpf_lxc.c
 
 __section("from-container")
 
 handle_xgress
+  |-send_trace_notify(ctx, "TRACE_FROM_LXC", SECLABEL, 0, 0, 0, 0...) -> "from-endpoint:"
   |-validate_ethertype(ctx, &proto)
   |
   |-switch (proto) {
@@ -160,18 +161,23 @@ bpf/lib/l3.h          |        |-if (ep) ipv4_local_delivery(ctx, l3_off, SECLAB
 bpf/lib/encap.h       |-if tunnel encap_and_redirect_lxc(ctx, tunnel_endpoint, encrypt_key,...)
                       |     |-__encap_and_redirect_with_nodeid(ctx, tunnel_endpoint, seclabel, monitor)
                       |     |    |-__encap_with_nodeid(ctx, tunnel_endpoint, seclabel, monitor)
-bpf/ctx/skb.h         |          |    |-ctx_set_tunnel_key(ctx, &key, sizeof(key),...) 
-bpf/lib/trace.h       |          |    |-send_trace_notify(ctx, TRACE_TO_OVERLAY, seclabel,...)
-bpf/helpers_skb.h     |          |-redirect(ENCAP_IFINDEX, 0)
+bpf/ctx/skb.h         |          |    |-ctx_set_tunnel_key(ctx, &key, sizeof(key),...) "encapuslate the packet" 
+bpf/lib/trace.h       |          |    |-send_trace_notify(ctx, "TRACE_TO_OVERLAY", seclabel,...) -> "to-overlay:" 
+bpf/helpers_skb.h     |          |-redirect(ENCAP_IFINDEX, 0) "redirected to tunnel device"
+                      |
+                      |           "here is the puzzle, what happens after redirected to tunnel device
+		      |            monitor trace shows to-network from to-netdev, but how?"
+bpf/bpf_host.c	      |               |-__section("to-netdev")
+                      |                   |-send_trace_notify(ctx, "TRACE_TO_NETWORK", src_id, 0, 0,...)
                       |      
                       |-if routing  //direct routing, pass to kernel stack (continue normal routing)
                       |    to_host:
 bpf/lib/l3.h          |      |-ipv4_l3(ctx, l3_off, (__u8 *)&router_mac.addr
-                      |      |-send_trace_notify(ctx, TRACE_TO_HOST, SECLABEL, HOST_ID, 0 
+                      |      |-send_trace_notify(ctx, "TRACE_TO_HOST", SECLABEL, HOST_ID, 0 
                       |      |-redirect(HOST_IFINDEX, BPF_F_INGRESS)
                       |    pass_to_stack:
                       |      |-ipv4_l3(ctx, l3_off, NULL, (__u8 *) &router_mac.addr, ip4) 
-                      |      |-send_trace_notify(ctx, TRACE_TO_STACK, SECLABEL, *dstID, 0, 0
+                      |      |-send_trace_notify(ctx, "TRACE_TO_STACK", SECLABEL, *dstID, 0, 0
                       |
                       | return CTX_ACT_OK;
 
@@ -179,6 +185,8 @@ bpf/lib/l3.h          |      |-ipv4_l3(ctx, l3_off, (__u8 *)&router_mac.addr
 
 
 Ingress:
+
+bpf_overlay.c
 
 __section("from-overlay")
   |
