@@ -35,7 +35,7 @@ filter protocol all pref 1 bpf chain 0
 filter protocol all pref 1 bpf chain 0 handle 0x1 bpf_lxc.o:[from-container] direct-action not_in_hw id 2404 tag a55c91b88bcdc6f1 jited 
 
 https://qmonnet.github.io/whirl-offload/2020/04/11/tc-bpf-direct-action/
-Understanding tc “direct action” mode for BPF"
+Understanding tc “direct action” mode for BPF
 
 flow_dissector:
 
@@ -68,22 +68,6 @@ ENDPOINT   POLICY (ingress)   POLICY (egress)   IDENTITY   LABELS (source:key[=v
 3444       Disabled           Disabled          1          k8s:dedicated=worker                                                 ready   
                                                            reserved:host          
 
-root@cilium-fl-worker:/home/cilium# cilium endpoint get 2775
-[
-  {
-    "id": 2775,
-.......
-      "networking": {
-        "addressing": [
-          {
-            "ipv4": "10.0.2.70"
-          }
-        ],
-        "host-mac": "56:c6:ab:91:96:77",
-        "interface-index": 19,
-        "interface-name": "lxc80a882bfd44a",
-        "mac": "be:c2:87:fa:d5:80"
-      },
                                          
                                                    
                                                   +-------------------------------+
@@ -181,6 +165,33 @@ bpf/lib/l3.h          |      |-ipv4_l3(ctx, l3_off, (__u8 *)&router_mac.addr
                       |
                       | return CTX_ACT_OK;
 
+------------------------------------------------------------------------------
+Ethernet	{Contents=[..14..] Payload=[..86..] SrcMAC=36:66:92:6d:11:14 DstMAC=36:a6:04:74:9a:1e EthernetType=IPv4 Length=0}
+IPv4	{Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=5678 Flags=DF FragOffset=0 TTL=64 Protocol=ICMPv4 Checksum=3656 SrcIP=10.0.1.218 DstIP=10.0.0.90 Options=[] Padding=[]}
+ICMPv4	{Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=60070 Id=5632 Seq=0}
+CPU 01: MARK 0x0 FROM 3349 from-endpoint: 98 bytes (98 captured), state newidentity 49798->unknown, orig-ip 0.0.0.0
+CPU 01: MARK 0x0 FROM 3349 DEBUG: Conntrack lookup 1/2: src=10.0.1.218:5632 dst=10.0.0.90:0
+CPU 01: MARK 0x0 FROM 3349 DEBUG: Conntrack lookup 2/2: nexthdr=1 flags=1
+CPU 01: MARK 0x0 FROM 3349 DEBUG: CT verdict: New, revnat=0
+CPU 01: MARK 0x0 FROM 3349 DEBUG: Successfully mapped addr=10.0.0.90 to identity=6076
+CPU 01: MARK 0x0 FROM 3349 DEBUG: Conntrack create: proxy-port=0 revnat=0 src-identity=49798 lb=0.0.0.0
+CPU 01: MARK 0x0 FROM 3349 DEBUG: Encapsulating to node 178866304 (0xaa94880) from seclabel 49798
+------------------------------------------------------------------------------
+Ethernet	{Contents=[..14..] Payload=[..86..] SrcMAC=36:66:92:6d:11:14 DstMAC=36:a6:04:74:9a:1e EthernetType=IPv4 Length=0}
+IPv4	{Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=5678 Flags=DF FragOffset=0 TTL=64 Protocol=ICMPv4 Checksum=3656 SrcIP=10.0.1.218 DstIP=10.0.0.90 Options=[] Padding=[]}
+ICMPv4	{Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=60070 Id=5632 Seq=0}
+CPU 01: MARK 0x0 FROM 3349 to-overlay: 98 bytes (98 captured), state new, interface cilium_vxlanidentity 49798->unknown, orig-ip 0.0.0.0
+CPU 01: MARK 0x0 FROM 2161 DEBUG: Conntrack lookup 1/2: src=10.169.72.129:48562 dst=10.169.72.128:8472
+CPU 01: MARK 0x0 FROM 2161 DEBUG: Conntrack lookup 2/2: nexthdr=17 flags=1
+CPU 01: MARK 0x0 FROM 2161 DEBUG: CT verdict: New, revnat=0
+CPU 01: MARK 0x0 FROM 2161 DEBUG: Conntrack create: proxy-port=0 revnat=0 src-identity=0 lb=0.0.0.0
+------------------------------------------------------------------------------
+Ethernet	{Contents=[..14..] Payload=[..118..] SrcMAC=00:50:56:86:66:45 DstMAC=00:50:56:86:48:98 EthernetType=IPv4 Length=0}
+IPv4	{Contents=[..20..] Payload=[..98..] Version=4 IHL=5 TOS=0 Length=134 Id=10473 Flags= FragOffset=0 TTL=64 Protocol=UDP Checksum=43819 SrcIP=10.169.72.129 DstIP=10.169.72.128 Options=[] Padding=[]}
+UDP	{Contents=[..8..] Payload=[..90..] SrcPort=48562 DstPort=8472(otv) Length=114 Checksum=0}
+  Packet has been truncated
+CPU 01: MARK 0x0 FROM 2161 to-network: 148 bytes (128 captured), state new, orig-ip 0.0.0.0
+------------------------------------------------------------------------------
 
 
 
@@ -235,3 +246,27 @@ bpf/lib/l3.h         |       |- ipv4_local_delivery(ctx, ETH_HLEN, *identity, ip
                                  |- ipv4_l3(ctx, ETH_HLEN, (__u8 *)&router_mac.addr,...)
                                  |- redirect(HOST_IFINDEX, 0);
                                       
+------------------------------------------------------------------------------
+Ethernet	{Contents=[..14..] Payload=[..118..] SrcMAC=00:50:56:86:48:98 DstMAC=00:50:56:86:66:45 EthernetType=IPv4 Length=0}
+IPv4	{Contents=[..20..] Payload=[..98..] Version=4 IHL=5 TOS=0 Length=134 Id=41688 Flags= FragOffset=0 TTL=64 Protocol=UDP Checksum=12604 SrcIP=10.169.72.128 DstIP=10.169.72.129 Options=[] Padding=[]}
+UDP	{Contents=[..8..] Payload=[..90..] SrcPort=60162 DstPort=8472(otv) Length=114 Checksum=0}
+  Packet has been truncated
+CPU 03: MARK 0x543b493 FROM 2161 from-network: 148 bytes (128 captured), state new, interface ens192, orig-ip 0.0.0.0
+CPU 03: MARK 0x543b493 FROM 2161 DEBUG: Successfully mapped addr=10.169.72.128 to identity=6
+------------------------------------------------------------------------------
+Ethernet	{Contents=[..14..] Payload=[..86..] SrcMAC=ea:8f:76:28:3d:3f DstMAC=ee:2c:e1:5a:9e:86 EthernetType=IPv4 Length=0}
+IPv4	{Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=11952 Flags= FragOffset=0 TTL=64 Protocol=ICMPv4 Checksum=13766 SrcIP=10.0.0.90 DstIP=10.0.1.218 Options=[] Padding=[]}
+ICMPv4	{Contents=[..8..] Payload=[..56..] TypeCode=EchoReply Checksum=62118 Id=5632 Seq=0}
+CPU 03: MARK 0x0 FROM 0 from-overlay: 98 bytes (98 captured), state new, interface cilium_vxlan, orig-ip 0.0.0.0
+CPU 03: MARK 0x0 FROM 0 DEBUG: Tunnel decap: id=6076 flowlabel=0
+CPU 03: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 3349 from seclabel 6076
+CPU 03: MARK 0x0 FROM 3349 DEBUG: Conntrack lookup 1/2: src=10.0.0.90:0 dst=10.0.1.218:5632
+CPU 03: MARK 0x0 FROM 3349 DEBUG: Conntrack lookup 2/2: nexthdr=1 flags=0
+CPU 03: MARK 0x0 FROM 3349 DEBUG: CT entry found lifetime=16890953, revnat=0
+CPU 03: MARK 0x0 FROM 3349 DEBUG: CT verdict: Reply, revnat=0
+------------------------------------------------------------------------------
+Ethernet	{Contents=[..14..] Payload=[..86..] SrcMAC=36:a6:04:74:9a:1e DstMAC=36:66:92:6d:11:14 EthernetType=IPv4 Length=0}
+IPv4	{Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=11952 Flags= FragOffset=0 TTL=63 Protocol=ICMPv4 Checksum=14022 SrcIP=10.0.0.90 DstIP=10.0.1.218 Options=[] Padding=[]}
+ICMPv4	{Contents=[..8..] Payload=[..56..] TypeCode=EchoReply Checksum=62118 Id=5632 Seq=0}
+CPU 03: MARK 0x0 FROM 3349 to-endpoint: 98 bytes (98 captured), state reply, interface lxcf69c5e689142identity 6076->49798, orig-ip 10.0.0.90, to endpoint 3349
+------------------------------------------------------------------------------
