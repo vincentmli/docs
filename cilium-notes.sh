@@ -18,7 +18,6 @@ export CN WN CA1 CA2 NGINX BUSYBOX
 root@cilium-bigip:~# kubectl  exec -it $CA2 -n kube-system -- /bin/bash
 
 root@cilium-fl-worker:/home/cilium# bpftool net show
-xdp:
 
 tc:
 ens192(3) clsact/ingress bpf_netdev_ens192.o:[from-netdev] id 2385
@@ -39,59 +38,106 @@ Understanding tc “direct action” mode for BPF
 
 DIAGRAM 1: TC clsact
 
-                                      +--------------------+
-                                      |                    |
-                                      |  clsact qdisc      |
-                                      |                    |
-                                      |                    |
-                                      +-----+--------------+
-                                            |
-                                            |
-      +----------------------------+-       |     +---------------------------------------------------------+
-      |                            |        |     |__dev_queue_xmit()                                       |
-      | __netif_receive_skb_core() |        |     |                                                         |
-      |                            |        |     |                                                         |
-      |  sch_handle_ingress()     <---------+-------->- sch_handle_egress()                                 |
-      |                            |              |  |   |- switch (tcf_classify(skb, miniq->filter_list.)  |
-      | 			   |    	  |  |   |   |- case TC_ACT_OK:                             |
-      |                            |              |  |   |       break;                                     |
-      | 			   |    	  |  |   |- return skb;                                     |
-      |                            |              |  |- dev_hard_start_xmit(skb, dev, txq, &rc);            |
-      +--------+-------------------+              +--------------+-----------------------+------------------+
+                        +--------------------+
+                        |                    |
+                        |  clsact qdisc      |
+                        |                    |
+                        |                    |
+                        +-----+--------------+
+                                       |
+                                       |
+      +----------------------------+   |    +---------------------------------------------------------+
+      |                            |   |    |__dev_queue_xmit()                                       |
+      | __netif_receive_skb_core() |   |    |                                                         |
+      |                            |   |    |                                                         |
+      |  sch_handle_ingress()     <----+-------->- sch_handle_egress()                                |
+      |                            |        |  |   |- switch (tcf_classify(skb, miniq->filter_list.)  |
+      | 			   |        |  |   |   |- case TC_ACT_OK:                             |
+      |                            |        |  |   |       break;                                     |
+      | 			   |   	    |  |   |- return skb;                                     |
+      |                            |        |  |- dev_hard_start_xmit(skb, dev, txq, &rc);            |
+      +--------+-------------------+        +--------------+-----------------------+------------------+
                ^                                                 |                      
                |                                     TX path     |
                | RX path                                         |
                |                                                 v
                |                                                  
 
-root@cilium-fl-worker:/home/cilium# ip link list                                         
-1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-2: ens160: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000
-    link/ether 00:50:56:86:95:f7 brd ff:ff:ff:ff:ff:ff
-3: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000
-    link/ether 00:50:56:86:66:45 brd ff:ff:ff:ff:ff:ff
-4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN mode DEFAULT group default 
-    link/ether 02:42:39:8c:09:a6 brd ff:ff:ff:ff:ff:ff
-5: cilium_net@cilium_host: <BROADCAST,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
-    link/ether 86:56:9f:8b:8b:3c brd ff:ff:ff:ff:ff:ff
-6: cilium_host@cilium_net: <BROADCAST,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
-    link/ether ee:33:1a:5c:1d:6c brd ff:ff:ff:ff:ff:ff
-7: cilium_vxlan: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
-    link/ether 4e:73:36:c0:8b:c3 brd ff:ff:ff:ff:ff:ff
-19: lxc80a882bfd44a@if18: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
-    link/ether 56:c6:ab:91:96:77 brd ff:ff:ff:ff:ff:ff link-netnsid 0
 
+tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,... )
 
-root@cilium-fl-worker:/home/cilium# cilium endpoint list
-ENDPOINT   POLICY (ingress)   POLICY (egress)   IDENTITY   LABELS (source:key[=value])                       IPv6   IPv4        STATUS   
-           ENFORCEMENT        ENFORCEMENT                                                                                       
-2775       Disabled           Disabled          36249      k8s:app=busybox                                          10.0.2.70   ready   
-                                                           k8s:io.cilium.k8s.policy.cluster=default                                     
-                                                           k8s:io.cilium.k8s.policy.serviceaccount=default                              
-                                                           k8s:io.kubernetes.pod.namespace=default                                      
-3444       Disabled           Disabled          1          k8s:dedicated=worker                                                 ready   
-                                                           reserved:host          
+struct tcf_proto {
+        /* Fast access part */
+        struct tcf_proto __rcu  *next;
+        void __rcu              *root;
+
+        /* called under RCU BH lock*/
+        int                     (*classify)(struct sk_buff *,
+                                            const struct tcf_proto *,
+                                            struct tcf_result *);
+        __be16                  protocol;
+
+        /* All the rest */
+        u32                     prio;
+        void                    *data;
+        const struct tcf_proto_ops      *ops;
+        struct tcf_chain        *chain;
+
+.....
+}
+
+static struct tcf_proto_ops cls_bpf_ops __read_mostly = {
+        .kind           =       "bpf",
+        .owner          =       THIS_MODULE,
+        .classify       =       cls_bpf_classify,
+        .init           =       cls_bpf_init,
+        .destroy        =       cls_bpf_destroy,
+        .get            =       cls_bpf_get,
+        .change         =       cls_bpf_change,
+        .delete         =       cls_bpf_delete,
+        .walk           =       cls_bpf_walk,
+        .reoffload      =       cls_bpf_reoffload,
+        .dump           =       cls_bpf_dump,
+        .bind_class     =       cls_bpf_bind_class,
+};
+
+struct cls_bpf_prog {
+        struct bpf_prog *filter;
+...
+}
+struct bpf_prog {
+        u16                     pages;          /* Number of allocated pages */
+        u16                     jited:1,
+....
+        /* Instructions for interpreter */
+        struct sock_filter      insns[0];
+        struct bpf_insn         insnsi[];
+};
+
+static int cls_bpf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
+                            struct tcf_result *res)
+{
+        struct cls_bpf_head *head = rcu_dereference_bh(tp->root);
+        bool at_ingress = skb_at_tc_ingress(skb);
+        struct cls_bpf_prog *prog;
+        int ret = -1;
+.....
+
+                if (tc_skip_sw(prog->gen_flags)) {
+                        filter_res = prog->exts_integrated ? TC_ACT_UNSPEC : 0;
+                } else if (at_ingress) {
+                        /* It is safe to push/pull even if skb_shared() */
+                        __skb_push(skb, skb->mac_len);
+                        bpf_compute_data_pointers(skb);
+                        filter_res = BPF_PROG_RUN(prog->filter, skb);
+                        __skb_pull(skb, skb->mac_len);
+                } else {
+                        bpf_compute_data_pointers(skb);
+                        filter_res = BPF_PROG_RUN(prog->filter, skb);
+                }
+....
+}
+
 
                                          
  DIAGRAM 2: Cilium datapath                                                  
