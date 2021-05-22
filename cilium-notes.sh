@@ -37,9 +37,34 @@ filter protocol all pref 1 bpf chain 0 handle 0x1 bpf_lxc.o:[from-container] dir
 https://qmonnet.github.io/whirl-offload/2020/04/11/tc-bpf-direct-action/
 Understanding tc “direct action” mode for BPF
 
-flow_dissector:
+DIAGRAM 1: TC clsact
 
-root@cilium-fl-worker:/home/cilium# ip link list
+                                      +--------------------+
+                                      |                    |
+                                      |  clsact qdisc      |
+                                      |                    |
+                                      |                    |
+                                      +-----+--------------+
+                                            |
+                                            |
+      +----------------------------+-       |     +---------------------------------------------------------+
+      |                            |        |     |__dev_queue_xmit()                                       |
+      | __netif_receive_skb_core() |        |     |                                                         |
+      |                            |        |     |                                                         |
+      |  sch_handle_ingress()     <---------+-------->- sch_handle_egress()                                 |
+      |                            |              |  |   |- switch (tcf_classify(skb, miniq->filter_list.)  |
+      | 			   |    	  |  |   |   |- case TC_ACT_OK:                             |
+      |                            |              |  |   |       break;                                     |
+      | 			   |    	  |  |   |- return skb;                                     |
+      |                            |              |  |- dev_hard_start_xmit(skb, dev, txq, &rc);            |
+      +--------+-------------------+              +--------------+-----------------------+------------------+
+               ^                                                 |                      
+               |                                     TX path     |
+               | RX path                                         |
+               |                                                 v
+               |                                                  
+
+root@cilium-fl-worker:/home/cilium# ip link list                                         
 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
 2: ens160: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000
@@ -69,7 +94,7 @@ ENDPOINT   POLICY (ingress)   POLICY (egress)   IDENTITY   LABELS (source:key[=v
                                                            reserved:host          
 
                                          
-                                                   
+ DIAGRAM 2: Cilium datapath                                                  
                                                   +-------------------------------+
                    (ingress from-overlay          |                               |          ingress from-overlay
                     egress to-overlay)            |                               |          egress to-overlay 
@@ -150,10 +175,15 @@ bpf/lib/trace.h       |          |    |-send_trace_notify(ctx, "TRACE_TO_OVERLAY
 bpf/helpers_skb.h     |          |-redirect(ENCAP_IFINDEX, 0) "redirected to tunnel device"
                       |
                       |           "here is the puzzle, what happens after redirected to tunnel device
-		      |            monitor trace shows to-network from to-netdev, but how?"
+		      |            how tunnel device forward the packet to physical network interface
+		      |            that has BPF "to-netdev" attached to"
+                      |
 bpf/bpf_host.c	      |               |-__section("to-netdev")
                       |                   |-send_trace_notify(ctx, "TRACE_TO_NETWORK", src_id, 0, 0,...)
-                      |      
+                      |                   |-return CTX_ACT_OK 
+		      |                    "Here skb lastly processed by sch_handle_egress, returned skb to 
+		      |                     device driver to deliver the skb, see above DIAGRAM 1"
+		      |                                      
                       |-if routing  //direct routing, pass to kernel stack (continue normal routing)
                       |    to_host:
 bpf/lib/l3.h          |      |-ipv4_l3(ctx, l3_off, (__u8 *)&router_mac.addr
