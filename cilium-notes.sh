@@ -46,22 +46,44 @@ DIAGRAM 1: TC clsact
                         +-----+--------------+
                                        |
                                        |
-      +----------------------------+   |    +---------------------------------------------------------+
-      |                            |   |    |__dev_queue_xmit()                                       |
-      | __netif_receive_skb_core() |   |    |                                                         |
-      |                            |   |    |                                                         |
-      |  sch_handle_ingress()     <----+-------->- sch_handle_egress()                                |
-      |                            |        |  |   |- switch (tcf_classify(skb, miniq->filter_list.)  |
-      | 			   |        |  |   |   |- case TC_ACT_OK:                             |
-      |                            |        |  |   |       break;                                     |
-      | 			   |   	    |  |   |- return skb;                                     |
-      |                            |        |  |- dev_hard_start_xmit(skb, dev, txq, &rc);            |
-      +--------+-------------------+        +--------------+-----------------------+------------------+
+      +----------------------------+   |         +------------------------------------------------------------+
+      |                            |   |         |__dev_queue_xmit()                                          |
+      | __netif_receive_skb_core() |   |         |                                                            |
+      |                            |   |         |                                                            |
+      |                            |   |         |                                                            |
+      |                            |   |         |                                                            |
+      | sch_handle_ingress()     <----+-------->- sch_handle_egress()                                         |
+      |  |- switch (tcf_classify_ingress(skb     |  |  |   |- switch (tcf_classify(skb, miniq->filter_list.)  |
+      |    |- case TC_ACT_OK:      |             |  |  |   |- case TC_ACT_OK:                                 |
+      |  |- return skb;            |             |  |  |       break;                                         |
+      | 			   |   	         |  |      |- return skb;                                     |
+      |                                          |  |- dev_hard_start_xmit(skb, dev, txq, &rc);               |
+      +--------+-------------------+             +--------------+-----------------------+------------------+--+
                ^                                                 |                      
                |                                     TX path     |
                | RX path                                         |
                |                                                 v
                |                                                  
+
+__netif_receive_skb_core() {
+
+#ifdef CONFIG_NET_INGRESS
+        if (static_branch_unlikely(&ingress_needed_key)) {
+                bool another = false;
+
+                skb = sch_handle_ingress(skb, &pt_prev, &ret, orig_dev,
+                                         &another);
+                if (another)
+                        goto another_round;
+                if (!skb)
+                        goto out;
+
+                if (nf_ingress(skb, &pt_prev, &ret, orig_dev) < 0)
+                        goto out;
+        }
+#endif
+
+}
 
 
 tcf_classify(struct sk_buff *skb, const struct tcf_proto *tp,... )
