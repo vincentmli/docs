@@ -242,9 +242,10 @@ bpf/ctx/skb.h         |          |    |-ctx_set_tunnel_key(ctx, &key, sizeof(key
 bpf/lib/trace.h       |          |    |-send_trace_notify(ctx, "TRACE_TO_OVERLAY", seclabel,...) -> "to-overlay:" 
 bpf/helpers_skb.h     |          |-redirect(ENCAP_IFINDEX, 0) "redirected to tunnel device"
                       |
-                      |           "here is the puzzle, what happens after redirected to tunnel device
-		      |            how tunnel device forward the packet to physical network interface
-		      |            that has BPF "to-netdev" attached to"
+                      |           "what happens after redirect the VXLAN packet to cilium_vxlan? the VXLAN packet
+		      |            will be processed by host netfilter system and host ip routing, find the physical
+		      |            egress physical interface according to destination target node ip, and further trigger 
+		      |            the BPF "to-netdev" attached to the physical interface ens192, iptables trace shows that "
                       |
 bpf/bpf_host.c	      |               |-__section("to-netdev")
                       |                   |-send_trace_notify(ctx, "TRACE_TO_NETWORK", src_id, 0, 0,...)
