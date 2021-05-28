@@ -1,0 +1,6 @@
+1 youtube-dl -f <best #> --write-auto-sub url
+2 convert subtitle from .vtt to .srt
+ffmpeg -i <sub-name.vtt> <sub-name>.srt
+3 Aegisub to edit sub-name.srt
+4, HandBrake to merge sub-name.srt and video
+
