@@ -325,6 +325,8 @@ do_netdev(struct __ctx_buff *ctx, __u16 proto, const bool from_host)
                                               if (ep->flags & ENDPOINT_F_HOST)
 						      return CTX_ACT_OK;
 
+"So here again, after do_netdev return CTX_ACT_OK, how the VXLAN UDP packet got directed to cilium_vxlan
+ which has BPF from-overlay attached to and start VXLAN decap...etc" 
 
 bpf_overlay.c
 
@@ -343,8 +345,10 @@ bpf_overlay.c  |- handle_ipv4(ctx, &src_identity)
                      |
                      |- if enable nodeport
                      |      |- nodeport_lb4(ctx, *identity)
-                     |
+		     |
                      |- ctx_get_tunnel_key(ctx, &key, sizeof(key), 0)
+		     |
+                     |- cilium_dbg(ctx, DBG_DECAP, key.tunnel_id, key.tunnel_label);
                      |
                      |- ep = lookup_ip4_endpoint(ip4);
                      |       |   |- __lookup_ip4_endpoint(__u32 ip)
@@ -375,39 +379,33 @@ bpf/lib/l3.h         |       |- ipv4_local_delivery(ctx, ETH_HLEN, *identity, ip
                                  |- ipv4_l3(ctx, ETH_HLEN, (__u8 *)&router_mac.addr,...)
                                  |- redirect(HOST_IFINDEX, 0);
                                       
-Ethernet        {Contents=[..14..] Payload=[..118..] SrcMAC=00:50:56:86:48:98 DstMAC=00:50:56:86:66:45 EthernetType=IPv4 Length=0}
-IPv4    {Contents=[..20..] Payload=[..98..] Version=4 IHL=5 TOS=0 Length=134 Id=17720 Flags= FragOffset=0 TTL=64 Protocol=UDP Checksum=36572 SrcIP=10.169.72.128 DstIP=10.169.72.129 Options=[] Padding=[]}
-UDP     {Contents=[..8..] Payload=[..90..] SrcPort=47630 DstPort=8472(otv) Length=114 Checksum=0}
-  Packet has been truncated
 
-CPU 02: MARK 0x5a139e68 FROM 3650 from-network: 148 bytes (128 captured), state new, interface ens192, orig-ip 0.0.0.0
+CPU 01: MARK 0x5a139e68 FROM 3650 from-network: 148 bytes (128 captured), state new, interface ens192, orig-ip 0.0.0.0
 
-CPU 02: MARK 0x5a139e68 FROM 3650 DEBUG: Successfully mapped addr=10.169.72.128 to identity=6
-CPU 02: MARK 0x5a139e68 FROM 3650 DEBUG: Tunnel decap: id=17 flowlabel=0
-
-------------------------------------------------------------------------------
-Ethernet        {Contents=[..14..] Payload=[..86..] SrcMAC=a6:5a:fb:c9:04:9e DstMAC=c6:28:e6:09:fd:96 EthernetType=IPv4 Length=0}
-IPv4    {Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=36580 Flags=DF FragOffset=0 TTL=64 Protocol=ICMPv4 Checksum=38474 SrcIP=10.0.0.119 DstIP=10.0.1.4 Options=[] Padding=[]}
-ICMPv4  {Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=43385 Id=15 Seq=0}
-
-CPU 02: MARK 0x0 FROM 0 from-overlay: 98 bytes (98 captured), state new, interface cilium_vxlan, orig-ip 0.0.0.0
-
-CPU 02: MARK 0x0 FROM 0 DEBUG: Tunnel decap: id=7997 flowlabel=0
-CPU 02: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 4037 from seclabel 7997
-CPU 02: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 15 from seclabel 7997
-CPU 02: MARK 0x0 FROM 4037 DEBUG: Conntrack lookup 1/2: src=10.0.0.119:15 dst=10.0.1.4:0
-CPU 02: MARK 0x0 FROM 4037 DEBUG: Conntrack lookup 2/2: nexthdr=1 flags=0
-CPU 02: MARK 0x0 FROM 4037 DEBUG: CT verdict: New, revnat=0
-CPU 02: MARK 0x0 FROM 4037 DEBUG: Conntrack create: proxy-port=0 revnat=0 src-identity=7997 lb=0.0.0.0
-Ethernet        {Contents=[..14..] Payload=[..86..] SrcMAC=fe:3f:66:67:dd:f0 DstMAC=9e:d4:bb:86:69:cf EthernetType=IPv4 Length=0}
-IPv4    {Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=36580 Flags=DF FragOffset=0 TTL=63 Protocol=ICMPv4 Checksum=38730 SrcIP=10.0.0.119 DstIP=10.0.1.4 Options=[] Padding=[]}
-ICMPv4  {Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=43385 Id=15 Seq=0}
-
-CPU 02: MARK 0x0 FROM 4037 to-endpoint: 98 bytes (98 captured), state new, interface lxcd34391ddb87bidentity 7997->7997, orig-ip 10.0.0.119, to endpoint 4037
-
+CPU 01: MARK 0x5a139e68 FROM 3650 DEBUG: Successfully mapped addr=10.169.72.128 to identity=6
+CPU 01: MARK 0x5a139e68 FROM 3650 DEBUG: Tunnel decap: id=17 flowlabel=0
 ------------------------------------------------------------------------------
 
+CPU 01: MARK 0x0 FROM 0 from-overlay: 98 bytes (98 captured), state new, interface cilium_vxlan, orig-ip 0.0.0.0
 
+CPU 01: MARK 0x0 FROM 0 DEBUG: Tunnel decap: id=7997 flowlabel=0
+CPU 01: MARK 0x0 FROM 0 DEBUG: Successfully mapped addr=10.0.1.99 to identity=7997
+CPU 01: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 90 from seclabel 7997
+CPU 01: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 17 from seclabel 7997
+CPU 01: MARK 0x0 FROM 90 DEBUG: Conntrack lookup 1/2: src=10.0.0.209:16 dst=10.0.1.99:0
+CPU 01: MARK 0x0 FROM 90 DEBUG: Conntrack lookup 2/2: nexthdr=1 flags=0
+CPU 01: MARK 0x0 FROM 90 DEBUG: CT verdict: New, revnat=0
+CPU 01: MARK 0x0 FROM 90 DEBUG: Conntrack create: proxy-port=0 revnat=0 src-identity=7997 lb=0.0.0.0
+------------------------------------------------------------------------------
+Ethernet        {Contents=[..14..] Payload=[..86..] SrcMAC=b2:b2:a7:4b:ed:97 DstMAC=02:08:b1:6f:88:50 EthernetType=IPv4 Length=0}
+IPv4    {Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=15081 Flags=DF FragOffset=0 TTL=63 Protocol=ICMPv4 Checksum=60044 SrcIP=10.0.0.209 DstIP=10.0.1.99 Options=[] Padding=[]}
+ICMPv4  {Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=27578 Id=16 Seq=0}
+
+CPU 01: MARK 0x0 FROM 90 to-endpoint: 98 bytes (98 captured), state new, interface lxc407b222a6233identity 7997->7997, orig-ip 10.0.0.209, to endpoint 90
+
+
+diff --git a/bpf/bpf_host.c b/bpf/bpf_host.c
+index 2feaa7053..04548a69d 100644
 --- a/bpf/bpf_host.c
 +++ b/bpf/bpf_host.c
 @@ -534,8 +534,10 @@ handle_ipv4(struct __ctx_buff *ctx, __u32 secctx,
@@ -422,6 +420,18 @@ CPU 02: MARK 0x0 FROM 4037 to-endpoint: 98 bytes (98 captured), state new, inter
 
                 return ipv4_local_delivery(ctx, ETH_HLEN, secctx, ip4, ep,
                                            METRIC_INGRESS, from_host);
+diff --git a/bpf/bpf_overlay.c b/bpf/bpf_overlay.c
+index 52121bc7b..6f4404735 100644
+--- a/bpf/bpf_overlay.c
++++ b/bpf/bpf_overlay.c
+@@ -207,6 +207,7 @@ static __always_inline int handle_ipv4(struct __ctx_buff *ctx, __u32 *identity)
+        }
+
+        cilium_dbg(ctx, DBG_DECAP, key.tunnel_id, key.tunnel_label);
++        cilium_dbg(ctx, DBG_IP_ID_MAP_SUCCEED4, ip4->daddr, key.tunnel_id);
+
+ #ifdef ENABLE_IPSEC
+        if (!decrypted) {
 diff --git a/bpf/lib/l3.h b/bpf/lib/l3.h
 index 4fbbed4ca..792ddbffd 100644
 --- a/bpf/lib/l3.h
@@ -434,4 +444,5 @@ index 4fbbed4ca..792ddbffd 100644
 +       cilium_dbg(ctx, DBG_LOCAL_DELIVERY, ep->ifindex, seclabel);
         tail_call_dynamic(ctx, &POLICY_CALL_MAP, ep->lxc_id);
         return DROP_MISSED_TAIL_CALL;
+ #endif
 
