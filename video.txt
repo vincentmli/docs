@@ -4,3 +4,15 @@ ffmpeg -i <sub-name.vtt> <sub-name>.srt
 3 Aegisub to edit sub-name.srt
 4, HandBrake to merge sub-name.srt and video
 
+5, replace duplicate srt lines
+
+perl -pi -e 's/^.*\r\n$//' <sub-name>.srt
+
+6 split video in 10 min
+   ffmpeg -i <file.mp4> -ss 0 -t 600 1-10-min.mp4
+   ffmpeg -i <file.mp4> -ss 600 -t 600 2-10-min.mp4
+   ffmpeg -i <file.mp4> -ss 1200 -t 600 3-10-min.mp4
+
+
+
+

@@ -296,6 +296,36 @@ CPU 01: MARK 0x0 FROM 2161 to-network: 148 bytes (128 captured), state new, orig
 
 Ingress:
 
+bpf/bpf_host.c
+
+/*
+ * from-netdev is attached as a tc ingress filter to one or more physical devices
+ * managed by Cilium (e.g., eth0). This program is only attached when:
+ * - the host firewall is enabled, or
+ * - BPF NodePort is enabled
+ */
+__section("from-netdev")
+int from_netdev(struct __ctx_buff *ctx)
+{
+        return handle_netdev(ctx, false);
+		 |- return do_netdev(ctx, proto, from_host)
+}
+
+do_netdev(struct __ctx_buff *ctx, __u16 proto, const bool from_host)
+  |- send_trace_notify(ctx, TRACE_FROM_NETWORK, 0, 0, 0, ctx->ingress_ifindex, 0, TRACE_PAYLOAD_LEN);
+  |- switch (proto) {
+  |    |- case bpf_htons(ETH_P_IP):
+             |- ep_tail_call(ctx, CILIUM_CALL_IPV4_FROM_LXC);
+	         |- __section_tail(CILIUM_MAP_CALLS, CILIUM_CALL_IPV4_FROM_LXC)
+		    int tail_handle_ipv4_from_netdev(struct __ctx_buff *ctx)
+		         |- return tail_handle_ipv4(ctx, 0, false);
+			      |- ret = handle_ipv4(ctx, proxy_identity, ipcache_srcid, from_host);
+			                |- ep = lookup_ip4_endpoint(ip4);
+                                        |- if (ep) {
+                                              if (ep->flags & ENDPOINT_F_HOST)
+						      return CTX_ACT_OK;
+
+
 bpf_overlay.c
 
 __section("from-overlay")
@@ -345,27 +375,63 @@ bpf/lib/l3.h         |       |- ipv4_local_delivery(ctx, ETH_HLEN, *identity, ip
                                  |- ipv4_l3(ctx, ETH_HLEN, (__u8 *)&router_mac.addr,...)
                                  |- redirect(HOST_IFINDEX, 0);
                                       
-------------------------------------------------------------------------------
-Ethernet	{Contents=[..14..] Payload=[..118..] SrcMAC=00:50:56:86:48:98 DstMAC=00:50:56:86:66:45 EthernetType=IPv4 Length=0}
-IPv4	{Contents=[..20..] Payload=[..98..] Version=4 IHL=5 TOS=0 Length=134 Id=41688 Flags= FragOffset=0 TTL=64 Protocol=UDP Checksum=12604 SrcIP=10.169.72.128 DstIP=10.169.72.129 Options=[] Padding=[]}
-UDP	{Contents=[..8..] Payload=[..90..] SrcPort=60162 DstPort=8472(otv) Length=114 Checksum=0}
+Ethernet        {Contents=[..14..] Payload=[..118..] SrcMAC=00:50:56:86:48:98 DstMAC=00:50:56:86:66:45 EthernetType=IPv4 Length=0}
+IPv4    {Contents=[..20..] Payload=[..98..] Version=4 IHL=5 TOS=0 Length=134 Id=17720 Flags= FragOffset=0 TTL=64 Protocol=UDP Checksum=36572 SrcIP=10.169.72.128 DstIP=10.169.72.129 Options=[] Padding=[]}
+UDP     {Contents=[..8..] Payload=[..90..] SrcPort=47630 DstPort=8472(otv) Length=114 Checksum=0}
   Packet has been truncated
-CPU 03: MARK 0x543b493 FROM 2161 from-network: 148 bytes (128 captured), state new, interface ens192, orig-ip 0.0.0.0
-CPU 03: MARK 0x543b493 FROM 2161 DEBUG: Successfully mapped addr=10.169.72.128 to identity=6
+
+CPU 02: MARK 0x5a139e68 FROM 3650 from-network: 148 bytes (128 captured), state new, interface ens192, orig-ip 0.0.0.0
+
+CPU 02: MARK 0x5a139e68 FROM 3650 DEBUG: Successfully mapped addr=10.169.72.128 to identity=6
+CPU 02: MARK 0x5a139e68 FROM 3650 DEBUG: Tunnel decap: id=17 flowlabel=0
+
 ------------------------------------------------------------------------------
-Ethernet	{Contents=[..14..] Payload=[..86..] SrcMAC=ea:8f:76:28:3d:3f DstMAC=ee:2c:e1:5a:9e:86 EthernetType=IPv4 Length=0}
-IPv4	{Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=11952 Flags= FragOffset=0 TTL=64 Protocol=ICMPv4 Checksum=13766 SrcIP=10.0.0.90 DstIP=10.0.1.218 Options=[] Padding=[]}
-ICMPv4	{Contents=[..8..] Payload=[..56..] TypeCode=EchoReply Checksum=62118 Id=5632 Seq=0}
-CPU 03: MARK 0x0 FROM 0 from-overlay: 98 bytes (98 captured), state new, interface cilium_vxlan, orig-ip 0.0.0.0
-CPU 03: MARK 0x0 FROM 0 DEBUG: Tunnel decap: id=6076 flowlabel=0
-CPU 03: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 3349 from seclabel 6076
-CPU 03: MARK 0x0 FROM 3349 DEBUG: Conntrack lookup 1/2: src=10.0.0.90:0 dst=10.0.1.218:5632
-CPU 03: MARK 0x0 FROM 3349 DEBUG: Conntrack lookup 2/2: nexthdr=1 flags=0
-CPU 03: MARK 0x0 FROM 3349 DEBUG: CT entry found lifetime=16890953, revnat=0
-CPU 03: MARK 0x0 FROM 3349 DEBUG: CT verdict: Reply, revnat=0
+Ethernet        {Contents=[..14..] Payload=[..86..] SrcMAC=a6:5a:fb:c9:04:9e DstMAC=c6:28:e6:09:fd:96 EthernetType=IPv4 Length=0}
+IPv4    {Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=36580 Flags=DF FragOffset=0 TTL=64 Protocol=ICMPv4 Checksum=38474 SrcIP=10.0.0.119 DstIP=10.0.1.4 Options=[] Padding=[]}
+ICMPv4  {Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=43385 Id=15 Seq=0}
+
+CPU 02: MARK 0x0 FROM 0 from-overlay: 98 bytes (98 captured), state new, interface cilium_vxlan, orig-ip 0.0.0.0
+
+CPU 02: MARK 0x0 FROM 0 DEBUG: Tunnel decap: id=7997 flowlabel=0
+CPU 02: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 4037 from seclabel 7997
+CPU 02: MARK 0x0 FROM 0 DEBUG: Attempting local delivery for container id 15 from seclabel 7997
+CPU 02: MARK 0x0 FROM 4037 DEBUG: Conntrack lookup 1/2: src=10.0.0.119:15 dst=10.0.1.4:0
+CPU 02: MARK 0x0 FROM 4037 DEBUG: Conntrack lookup 2/2: nexthdr=1 flags=0
+CPU 02: MARK 0x0 FROM 4037 DEBUG: CT verdict: New, revnat=0
+CPU 02: MARK 0x0 FROM 4037 DEBUG: Conntrack create: proxy-port=0 revnat=0 src-identity=7997 lb=0.0.0.0
+Ethernet        {Contents=[..14..] Payload=[..86..] SrcMAC=fe:3f:66:67:dd:f0 DstMAC=9e:d4:bb:86:69:cf EthernetType=IPv4 Length=0}
+IPv4    {Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=36580 Flags=DF FragOffset=0 TTL=63 Protocol=ICMPv4 Checksum=38730 SrcIP=10.0.0.119 DstIP=10.0.1.4 Options=[] Padding=[]}
+ICMPv4  {Contents=[..8..] Payload=[..56..] TypeCode=EchoRequest Checksum=43385 Id=15 Seq=0}
+
+CPU 02: MARK 0x0 FROM 4037 to-endpoint: 98 bytes (98 captured), state new, interface lxcd34391ddb87bidentity 7997->7997, orig-ip 10.0.0.119, to endpoint 4037
+
 ------------------------------------------------------------------------------
-Ethernet	{Contents=[..14..] Payload=[..86..] SrcMAC=36:a6:04:74:9a:1e DstMAC=36:66:92:6d:11:14 EthernetType=IPv4 Length=0}
-IPv4	{Contents=[..20..] Payload=[..64..] Version=4 IHL=5 TOS=0 Length=84 Id=11952 Flags= FragOffset=0 TTL=63 Protocol=ICMPv4 Checksum=14022 SrcIP=10.0.0.90 DstIP=10.0.1.218 Options=[] Padding=[]}
-ICMPv4	{Contents=[..8..] Payload=[..56..] TypeCode=EchoReply Checksum=62118 Id=5632 Seq=0}
-CPU 03: MARK 0x0 FROM 3349 to-endpoint: 98 bytes (98 captured), state reply, interface lxcf69c5e689142identity 6076->49798, orig-ip 10.0.0.90, to endpoint 3349
-------------------------------------------------------------------------------
+
+
+--- a/bpf/bpf_host.c
++++ b/bpf/bpf_host.c
+@@ -534,8 +534,10 @@ handle_ipv4(struct __ctx_buff *ctx, __u32 secctx,
+                /* Let through packets to the node-ip so they are processed by
+                 * the local ip stack.
+                 */
+-               if (ep->flags & ENDPOINT_F_HOST)
++               if (ep->flags & ENDPOINT_F_HOST) {
++                       cilium_dbg(ctx, DBG_DECAP, ip4->protocol, ipcache_srcid);
+                        return CTX_ACT_OK;
++               }
+
+                return ipv4_local_delivery(ctx, ETH_HLEN, secctx, ip4, ep,
+                                           METRIC_INGRESS, from_host);
+diff --git a/bpf/lib/l3.h b/bpf/lib/l3.h
+index 4fbbed4ca..792ddbffd 100644
+--- a/bpf/lib/l3.h
++++ b/bpf/lib/l3.h
+@@ -147,7 +147,7 @@ static __always_inline int ipv4_local_delivery(struct __ctx_buff *ctx, int l3_of
+        ctx_store_meta(ctx, CB_SRC_LABEL, seclabel);
+        ctx_store_meta(ctx, CB_IFINDEX, ep->ifindex);
+        ctx_store_meta(ctx, CB_FROM_HOST, from_host ? 1 : 0);
+-
++       cilium_dbg(ctx, DBG_LOCAL_DELIVERY, ep->ifindex, seclabel);
+        tail_call_dynamic(ctx, &POLICY_CALL_MAP, ep->lxc_id);
+        return DROP_MISSED_TAIL_CALL;
+
