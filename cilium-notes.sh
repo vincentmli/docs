@@ -291,8 +291,32 @@ UDP	{Contents=[..8..] Payload=[..90..] SrcPort=48562 DstPort=8472(otv) Length=11
   Packet has been truncated
 CPU 01: MARK 0x0 FROM 2161 to-network: 148 bytes (128 captured), state new, orig-ip 0.0.0.0
 ------------------------------------------------------------------------------
-
-
+                          
+                                     
+                                     
+                          +--------------------------------------------------------------------------------+
+                          |                                                                                |
+                          |                                                                                |
+                          |                                                                                |
+                          |                                               +------------+                   |
+                          +                                               |            |                   |
+                          |                                               |  pod       |                   |
+                          |             +----------+                      |            |                   |
+                          |             | host udp |                      |            |                   |
+                          |             + stack    +                      +-----eth0---+                   |
+                          |             |vxlan     |                              ^                        |
+                          |             |decap     |                              |                        |
+                          |             |drivers/  |                              |                        |
+                          |      +----->|net/      |--+                           | from/to-container      |
+                          |      |      |vxlan.c   |  |                     lxcxxxxxx@if<#>                |
+                          |      |      +----------+  |                           |                        |
+                          |      |                    |                           |                        |
+                          |      |                    |                           |                        |
+                          |      |                    |                           |                        |
+                          |      |                    |                           |                        |
+             ingress      |      |                    V                           |                        |
+          --------------->+----ens192---------------cilium_vxlan------------------------------+------------+
+			    from/to-netdev          from/to-overlay
 
 Ingress:
 
@@ -325,8 +349,14 @@ do_netdev(struct __ctx_buff *ctx, __u16 proto, const bool from_host)
                                               if (ep->flags & ENDPOINT_F_HOST)
 						      return CTX_ACT_OK;
 
-"So here again, after do_netdev return CTX_ACT_OK, how the VXLAN UDP packet got directed to cilium_vxlan
- which has BPF from-overlay attached to and start VXLAN decap...etc" 
+"So here again, after do_netdev return CTX_ACT_OK, how the VXLAN UDP packet got directed to cilium_vxlan ?
+my understanding is that the VXLAN UDP packet is processed by host UDP stack and based on the UDP destination port 8472
+, is further processed by vxlan_rcv() drivers/net/vxlan.c.  
+
+also debug log shows packet processed by handle_ipv4 in bpf_overlay.c (from-overlay)already got decapped 
+so who decapped the packet, there is no decap function in cilium BPF, ctx_get_tunnel_key/ctx_set_tunnel_key seems
+to be just BPF helper functions to set the tunnel metadata, the actual packet encap/decap is processed in kernel driver/net/vxlan.c,
+so in cilium tunnel mode the encap/decap is processed by host kernel stack, no complete kernel stack bypass by BPF like cilium route mode" 
 
 bpf_overlay.c
 
@@ -445,4 +475,53 @@ index 4fbbed4ca..792ddbffd 100644
         tail_call_dynamic(ctx, &POLICY_CALL_MAP, ep->lxc_id);
         return DROP_MISSED_TAIL_CALL;
  #endif
+
+
+
+Jun  3 14:43:27 cilium-worker kernel: ens192: vxlan_rcv: tun_info key ipv4 dst  10.169.72.238
+Jun  3 14:43:27 cilium-worker kernel: cilium_vxlan: vxlan_xmit: tun_info key ipv4 dst  10.169.72.239
+
+
+diff --git a/drivers/net/vxlan.c b/drivers/net/vxlan.c
+index 02a14f1b938a..5d30e11baeaa 100644
+--- a/drivers/net/vxlan.c
++++ b/drivers/net/vxlan.c
+@@ -1882,6 +1882,7 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
+ 
+        if (vxlan_collect_metadata(vs)) {
+                struct metadata_dst *tun_dst;
++               __be32 daddr;
+ 
+                tun_dst = udp_tun_rx_dst(skb, vxlan_get_sk_family(vs), TUNNEL_KEY,
+                                         key32_to_tunnel_id(vni), sizeof(*md));
+@@ -1889,6 +1890,8 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
+                if (!tun_dst)
+                        goto drop;
+ 
++               daddr = tun_dst->u.tun_info.key.u.ipv4.dst;
++               netdev_info(skb->dev, "vxlan_rcv: tun_info key ipv4 dst  %pI4\n", &daddr);
+                md = ip_tunnel_info_opts(&tun_dst->u.tun_info);
+ 
+                skb_dst_set(skb, (struct dst_entry *)tun_dst);
+@@ -2885,6 +2888,7 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
+        struct vxlan_fdb *f;
+        struct ethhdr *eth;
+        __be32 vni = 0;
++       __be32 daddr;
+ 
+        info = skb_tunnel_info(skb);
+ 
+@@ -2895,8 +2899,11 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
+                    info->mode & IP_TUNNEL_INFO_TX) {
+                        vni = tunnel_id_to_key32(info->key.tun_id);
+                } else {
+-                       if (info && info->mode & IP_TUNNEL_INFO_TX)
++                       if (info && info->mode & IP_TUNNEL_INFO_TX) {
++                               daddr = info->key.u.ipv4.dst;
++                               netdev_info(skb->dev, "vxlan_xmit: tun_info key ipv4 dst  %pI4\n", &daddr);
+                                vxlan_xmit_one(skb, dev, vni, NULL, false);
++                       }
+                        else
+                                kfree_skb(skb);
+                        return NETDEV_TX_OK;
 
