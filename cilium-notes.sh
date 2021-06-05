@@ -291,32 +291,54 @@ UDP	{Contents=[..8..] Payload=[..90..] SrcPort=48562 DstPort=8472(otv) Length=11
   Packet has been truncated
 CPU 01: MARK 0x0 FROM 2161 to-network: 148 bytes (128 captured), state new, orig-ip 0.0.0.0
 ------------------------------------------------------------------------------
-                          
+
+Cilium Tunnel Mode Ingress
+
+1, Diagram overview
+
+2,  How cilium_vxlan interface is created 
+(bpf/init.sh, drivers/net/vxlan.c metadata and VNI key based implementation) 
+
+3, how to build cilium
+
+4, cilium datapath monitor log 
+
+5,code path analysis with debug 
+  bpf/bpf_host.c
+  drivers/net/vxlan.c (vxlan_rcv)
+  bpf/bpf_overlay.c
                                      
-                                     
-                          +--------------------------------------------------------------------------------+
-                          |                                                                                |
-                          |                                                                                |
-                          |                                                                                |
-                          |                                               +------------+                   |
-                          +                                               |            |                   |
-                          |                                               |  pod       |                   |
-                          |             +----------+                      |            |                   |
-                          |             | host udp |                      |            |                   |
-                          |             + stack    +                      +-----eth0---+                   |
-                          |             |vxlan     |                              ^                        |
-                          |             |decap     |                              |                        |
-                          |             |drivers/  |                              |                        |
-                          |      +----->|net/      |--+                           | from/to-container      |
-                          |      |      |vxlan.c   |  |                     lxcxxxxxx@if<#>                |
-                          |      |      +----------+  |                           |                        |
-                          |      |                    |                           |                        |
-                          |      |                    |                           |                        |
-                          |      |                    |                           |                        |
-                          |      |                    |                           |                        |
-             ingress      |      |                    V                           |                        |
-          --------------->+----ens192---------------cilium_vxlan------------------------------+------------+
-			    from/to-netdev          from/to-overlay
+                                 
+                      +--------------------------------------------------------------------------------+
+                      |                                                                                |
+                      |                                                                                |
+                      |                                                                                |
+                      |                                               +------------+                   |
+                      +                                               |            |                   |
+                      |                                               |  pod       |                   |
+                      |             +----------+                      |            |                   |
+                      |             | host udp |                      |            |                   |
+                      |             + stack    +                      +-----eth0---+                   |
+                      |             |vxlan     |                              ^                        |
+                      |             |decap     |                              |                        |
+                      |             |drivers/  |                              |                        |
+                      |      +----->|net/      |--+                           | from/to-container      |
+                      |      |      |vxlan.c   |  |                     lxcxxxxxx@if<#>                |
+                      |      |      +----------+  |                           |                        |
+                      |      |                    |                           |                        |
+                      |      |                    |                           |                        |
+                      |      |                    |                           |                        |
+                      |      |                    |                           |                        |
+         ingress      |      |                    V                           |                        |
+      --------------->+----ens192---------------cilium_vxlan------------------------------+------------+
+			from/to-netdev          from/to-overlay
+
+
+Jun  3 20:53:39 cilium-worker kernel:       ens192: vxlan_rcv: tun_info key ipv4 dst  10.169.72.238
+Jun  3 20:53:39 cilium-worker kernel: cilium_vxlan: vxlan_rcv: vxlan->dev
+Jun  3 20:53:39 cilium-worker kernel: cilium_vxlan: vxlan_xmit: tun_info key ipv4 dst  10.169.72.239
+
+
 
 Ingress:
 
@@ -350,13 +372,41 @@ do_netdev(struct __ctx_buff *ctx, __u16 proto, const bool from_host)
 						      return CTX_ACT_OK;
 
 "So here again, after do_netdev return CTX_ACT_OK, how the VXLAN UDP packet got directed to cilium_vxlan ?
-my understanding is that the VXLAN UDP packet is processed by host UDP stack and based on the UDP destination port 8472
+the VXLAN UDP packet is processed by host UDP stack and based on the UDP destination port 8472
 , is further processed by vxlan_rcv() drivers/net/vxlan.c.  
 
 also debug log shows packet processed by handle_ipv4 in bpf_overlay.c (from-overlay)already got decapped 
-so who decapped the packet, there is no decap function in cilium BPF, ctx_get_tunnel_key/ctx_set_tunnel_key seems
-to be just BPF helper functions to set the tunnel metadata, the actual packet encap/decap is processed in kernel driver/net/vxlan.c,
+so who decapped the packet, there is no decap function in cilium BPF, ctx_get_tunnel_key/ctx_set_tunnel_key seems to be just BPF helper functions to set the tunnel metadata, the actual packet encap/decap is processed in kernel driver/net/vxlan.c,
 so in cilium tunnel mode the encap/decap is processed by host kernel stack, no complete kernel stack bypass by BPF like cilium route mode" 
+
+bpf/init.sh
+
+if [ "${TUNNEL_MODE}" != "<nil>" ]; then
+        ENCAP_DEV="cilium_${TUNNEL_MODE}"
+        ip link show $ENCAP_DEV || {
+                ip link add name $ENCAP_DEV address $(rnd_mac_addr) type $TUNNEL_MODE external || encap_fail
+        }
+        ip link set $ENCAP_DEV mtu $MTU || encap_fail
+
+        setup_dev $ENCAP_DEV || encap_fail
+
+        ENCAP_IDX=$(cat /sys/class/net/${ENCAP_DEV}/ifindex)
+        sed -i '/^#.*ENCAP_IFINDEX.*$/d' $RUNDIR/globals/node_config.h
+        echo "#define ENCAP_IFINDEX $ENCAP_IDX" >> $RUNDIR/globals/node_config.h
+
+        CALLS_MAP="cilium_calls_overlay_${ID_WORLD}"
+        COPTS="-DSECLABEL=${ID_WORLD} -DFROM_ENCAP_DEV=1"
+        if [ "$NODE_PORT" = "true" ]; then
+                COPTS="${COPTS} -DDISABLE_LOOPBACK_LB"
+        fi
+        bpf_load $ENCAP_DEV "$COPTS" "ingress" bpf_overlay.c bpf_overlay.o from-overlay ${CALLS_MAP}
+        bpf_load $ENCAP_DEV "$COPTS" "egress" bpf_overlay.c bpf_overlay.o to-overlay ${CALLS_MAP}
+else
+        # Remove eventual existing encapsulation device from previous run
+        ip link del cilium_vxlan 2> /dev/null || true
+        ip link del cilium_geneve 2> /dev/null || true
+fi
+
 
 bpf_overlay.c
 
@@ -478,12 +528,14 @@ index 4fbbed4ca..792ddbffd 100644
 
 
 
-Jun  3 14:43:27 cilium-worker kernel: ens192: vxlan_rcv: tun_info key ipv4 dst  10.169.72.238
-Jun  3 14:43:27 cilium-worker kernel: cilium_vxlan: vxlan_xmit: tun_info key ipv4 dst  10.169.72.239
+Jun  3 20:53:39 cilium-worker kernel:       ens192: vxlan_rcv: tun_info key ipv4 dst  10.169.72.238
+Jun  3 20:53:39 cilium-worker kernel: cilium_vxlan: vxlan_rcv: vxlan->dev
+Jun  3 20:53:39 cilium-worker kernel: cilium_vxlan: vxlan_xmit: tun_info key ipv4 dst  10.169.72.239
+
 
 
 diff --git a/drivers/net/vxlan.c b/drivers/net/vxlan.c
-index 02a14f1b938a..5d30e11baeaa 100644
+index 02a14f1b938a..71549d0cc9be 100644
 --- a/drivers/net/vxlan.c
 +++ b/drivers/net/vxlan.c
 @@ -1882,6 +1882,7 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
@@ -503,7 +555,15 @@ index 02a14f1b938a..5d30e11baeaa 100644
                 md = ip_tunnel_info_opts(&tun_dst->u.tun_info);
  
                 skb_dst_set(skb, (struct dst_entry *)tun_dst);
-@@ -2885,6 +2888,7 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -1941,6 +1944,7 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
+        }
+ 
+        dev_sw_netstats_rx_add(vxlan->dev, skb->len);
++       netdev_info(skb->dev, "vxlan_rcv: vxlan->dev\n");
+        gro_cells_receive(&vxlan->gro_cells, skb);
+ 
+        rcu_read_unlock();
+@@ -2885,6 +2889,7 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
         struct vxlan_fdb *f;
         struct ethhdr *eth;
         __be32 vni = 0;
@@ -511,7 +571,7 @@ index 02a14f1b938a..5d30e11baeaa 100644
  
         info = skb_tunnel_info(skb);
  
-@@ -2895,8 +2899,11 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -2895,8 +2900,11 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
                     info->mode & IP_TUNNEL_INFO_TX) {
                         vni = tunnel_id_to_key32(info->key.tun_id);
                 } else {
@@ -524,4 +584,41 @@ index 02a14f1b938a..5d30e11baeaa 100644
                         else
                                 kfree_skb(skb);
                         return NETDEV_TX_OK;
+
+
+
+bpftrace -e 'kprobe:vxlan_rcv { @[kstack()] = count(); }'
+
+@[
+    vxlan_rcv+1
+    udp_queue_rcv_one_skb+479
+    udp_unicast_rcv_skb.isra.67+116
+    __udp4_lib_rcv+1368
+    ip_protocol_deliver_rcu+232
+    ip_local_deliver_finish+68
+    ip_local_deliver+247
+    ip_sublist_rcv_finish+101
+    ip_sublist_rcv+367
+    ip_list_rcv+271
+    __netif_receive_skb_list_core+598
+    netif_receive_skb_list_internal+402
+    gro_normal_list.part.157+25
+    napi_complete_done+101
+    vmxnet3_poll_rx_only+125
+    __napi_poll+43
+    net_rx_action+592
+    __softirqentry_text_start+223
+    irq_exit_rcu+218
+    common_interrupt+119
+    asm_common_interrupt+30
+    native_safe_halt+14
+    acpi_idle_do_entry+70
+    acpi_idle_enter+90
+    cpuidle_enter_state+140
+    cpuidle_enter+41
+    do_idle+616
+    cpu_startup_entry+25
+    start_secondary+289
+    secondary_startup_64_no_verify+194
+]: 1
 
