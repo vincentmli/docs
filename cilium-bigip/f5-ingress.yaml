@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: single-service
+  annotations:
+     ingress.kubernetes.io/allow-http: "true"
+     kubernetes.io/ingress.class: f5
+     'virtual-server.f5.com/ip': '10.169.72.163'
+     'virtual-server.f5.com/health': |
+      [
+        {
+          "path":     "/",
+          "send":     "HTTP GET /",
+          "interval": 5,
+          "timeout":  16
+        }
+      ]
+spec:
+  backend:
+    serviceName: nginxservice 
+    servicePort: 80
