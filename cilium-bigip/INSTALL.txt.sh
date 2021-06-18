@@ -5,7 +5,8 @@ BIG-IP:
 # 1. Create a VXLAN tunnel profile 
 tmsh create net tunnels vxlan ci-vxlan port 8472 flooding-type none
 
-# 2. Create Cilium VXLAN tunnel 
+# 2. Create Cilium VXLAN tunnel, note VNI key 68, you should not use key 1 or key 2 as it 
+# is reserved by Cilium
 tmsh create net tunnels tunnel cilium-vxlan key 68 profile ci-vxlan local-address 10.169.72.34 
 
 # 3. Create the VXLAN tunnel self-IP.
