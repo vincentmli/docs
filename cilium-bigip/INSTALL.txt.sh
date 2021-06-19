@@ -3,14 +3,14 @@
 BIG-IP:
 
 # 1. Create a VXLAN tunnel profile 
-tmsh create net tunnels vxlan ci-vxlan port 8472 flooding-type none
+tmsh create net tunnels vxlan fl-vxlan port 8472 flooding-type none
 
 # 2. Create Cilium VXLAN tunnel, note VNI key 68, you should not use key 1 or key 2 as it 
 # is reserved by Cilium
-tmsh create net tunnels tunnel cilium-vxlan key 68 profile ci-vxlan local-address 10.169.72.34 
+tmsh create net tunnels tunnel flannel_vxlan key 68 profile fl-vxlan local-address 10.169.72.34 
 
-# 3. Create the VXLAN tunnel self-IP.
-tmsh create net self 10.0.66.34 address 10.0.66.34/255.255.255.0 allow-service none vlan cilium-vxlan
+# 3. Create the VXLAN tunnel self-IP, allow default service, allow none stops self ip ping.
+tmsh create net self 10.0.3.34 address 10.0.3.34/255.255.255.0 allow-service default vlan flannel_vxlan
 
 # 4. Create partition "k8s" on BIG-IP
 tmsh create auth partition k8s
@@ -32,8 +32,9 @@ kubectl apply -f cilium-bigip.yaml
 
 
 # 3 update cilium tunnel map with bpftool for BIG-IP VXLAN tunnel subnet, VNI, VtepMAC
+#   type in as the argument requires
 
-./tunnel.sh
+./tunnel.sh -a add
 
 # 4. deploy cluster service nginxservice and ngnix pod
 
