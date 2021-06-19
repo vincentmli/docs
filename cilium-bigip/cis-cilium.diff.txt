@@ -1,0 +1,49 @@
+diff --git a/pkg/vxlan/vxlanMgr.go b/pkg/vxlan/vxlanMgr.go
+index 5c77b21f..e450b143 100644
+--- a/pkg/vxlan/vxlanMgr.go
++++ b/pkg/vxlan/vxlanMgr.go
+@@ -19,6 +19,7 @@ package vxlan
+ import (
+ 	"context"
+ 	"fmt"
++	"regexp"
+ 	"strconv"
+ 	"strings"
+ 	"time"
+@@ -261,6 +262,14 @@ func (vxm *VxlanMgr) addArpForPods(pods interface{}, kubeClient kubernetes.Inter
+ 	}
+ }
+ 
++func findIP(input string) string {
++	numBlock := "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])"
++	regexPattern := numBlock + "\\." + numBlock + "\\." + numBlock + "\\." + numBlock
++
++	regEx := regexp.MustCompile(regexPattern)
++	return regEx.FindString(input)
++}
++
+ // Gets the VtepMac from the Node running this Pod
+ func getVtepMac(
+ 	pod resource.Member,
+@@ -279,6 +288,21 @@ func getVtepMac(
+ 						return parseVtepMac(mac, node.ObjectMeta.Name)
+ 					}
+ 				}
++				if _, ok := node.ObjectMeta.Annotations["io.cilium.network.ipv4-pod-cidr"]; ok &&
++					node.ObjectMeta.Name == kPod.Spec.NodeName {
++					nodeAddrs := node.Status.Addresses
++					for _, addr := range nodeAddrs {
++						// for some reason the node name appears as addr.Address, skip the node name
++						if len(findIP(addr.Address)) > 0 {
++							//  fake VtepMAC based on node ip (for cilium tunnel use)
++							mac := ipv4ToMac(addr.Address)
++							log.Infof("[VxLAN] getVtepMac mac (%s) ", mac)
++							return mac, nil
++						}
++					}
++
++				}
++
+ 			}
+ 		}
+ 	}
