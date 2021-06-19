@@ -49,7 +49,7 @@ fi
 # Convert values to Hex
 HEX_SUBNET=$(printf '%02x ' ${SUBNET//./ })
 HEX_SELFIP=$(printf '%02x ' ${SELFIP//./ })
-HEX_VNI=$(printf '%02x' ${VNI//./ })
+HEX_VNI=$(printf '%02x' ${VNI} | sed 's/.\{2\}/& /g')
 HEX_MAC=$(echo ${MAC//:/ })
 
 
