@@ -10,7 +10,7 @@ tmsh create net tunnels vxlan ci-vxlan port 8472 flooding-type none
 tmsh create net tunnels tunnel cilium-vxlan key 68 profile ci-vxlan local-address 10.169.72.34 
 
 # 3. Create the VXLAN tunnel self-IP.
-tmsh create net self 10.0.66.0 address 10.0.66.0/255.255.255.0 allow-service none vlan cilium-vxlan
+tmsh create net self 10.0.66.34 address 10.0.66.34/255.255.255.0 allow-service none vlan cilium-vxlan
 
 # 4. Create partition "k8s" on BIG-IP
 tmsh create auth partition k8s
