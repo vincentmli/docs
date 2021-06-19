@@ -1,0 +1,47 @@
+diff --git a/build-tools/_build-lib.sh b/build-tools/_build-lib.sh
+index 92ee8bbf..37536954 100755
+--- a/build-tools/_build-lib.sh
++++ b/build-tools/_build-lib.sh
+@@ -26,14 +26,14 @@ set -e
+ PKGIMPORT="github.com/F5Networks/k8s-bigip-ctlr"
+ 
+ 
+-if [[ $BUILD_VERSION == "" ]]; then
+-  echo "Must set BUILD_VERSION"
+-  false
+-fi
+-if [[ $BUILD_INFO == "" ]]; then
+-  echo "Must set BUILD_INFO"
+-  false
+-fi
++#if [[ $BUILD_VERSION == "" ]]; then
++#  echo "Must set BUILD_VERSION"
++#  false
++#fi
++#if [[ $BUILD_INFO == "" ]]; then
++#  echo "Must set BUILD_INFO"
++#  false
++#fi
+ 
+ 
+ # Defer calculating build dir until actualy in the build environment
+diff --git a/build-tools/version-tool b/build-tools/version-tool
+index 6b87048b..788defbd 100755
+--- a/build-tools/version-tool
++++ b/build-tools/version-tool
+@@ -336,7 +336,7 @@ def print_docker_build_args(args):
+ 
+ def main():
+     """Entry point for Version Tool."""
+-    version_selftest()
++    """version_selftest()"""
+ 
+     parser = argparse.ArgumentParser(description='Version Tool')
+     parser.add_argument('--version-file',
+diff --git a/next-version.txt b/next-version.txt
+index 437459cd..01857cd4 100644
+--- a/next-version.txt
++++ b/next-version.txt
+@@ -1 +1 @@
+-2.5.0
++2.5.0.1
