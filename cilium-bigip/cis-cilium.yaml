@@ -42,11 +42,11 @@ spec:
         - --bigip-partition
         - k8s 
         - --bigip-url
-        - 10.169.72.34
+        - 10.169.72.15
         - --bigip-username
         - admin
         - --bigip-password
-        - admin
+        - testenv12 
         - --verify-interval
         - "30"
         - --node-poll-interval
@@ -65,7 +65,7 @@ spec:
         - "true"
         command:
         - /app/bin/k8s-bigip-ctlr
-        image: vli39/k8s-bigip-ctlr:cilium
+        image: vli39/k8s-bigip-ctlr:vtep
         imagePullPolicy: Always 
         #imagePullPolicy: Never 
         name: cc-cluster

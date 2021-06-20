@@ -27,7 +27,7 @@ metadata:
 rules:
 - apiGroups:
   - ""
-  - "networking.k8s.io"
+  - "extensions"
   resources:
   - nodes
   - pods
@@ -42,7 +42,7 @@ rules:
   - watch
 - apiGroups:
   - ""
-  - "networking.k8s.io"
+  - "extensions"
   resources:
   - configmaps
   - events
