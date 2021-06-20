@@ -19,10 +19,19 @@ Cilium:
 
 # 1 kubeadm to init k8s without kube-proxy
 
-#if you have two network interface and two IP address, you can specify which address for k8s api
-# and which ip address for k8s node ip
-# for ubuntu cat /etc/default/kubelet
+#I have two network interfaces and two IP address, only 10.3 could reach to internet behand proxy
+# if you in same situation, choose  which address for k8s api  and 
+# which ip address for k8s node ip
+
+# for ubuntu to specify node-ip in /etc/default/kubelet
 # KUBELET_EXTRA_ARGS=--node-ip=10.169.72.128
+# also running into problem with ubuntu when k8s apiserver ip not same as node ip
+# had to re-run kubeadm init with --apiserver-advertise-address=10.169.72.128 
+# so node ip and apiserer ip to be same as workaround
+# kubectl logs -n kube-system  cilium-d4zqh  -f
+#Error from server: Get "https://10.169.72.9:10250/containerLogs/kube-system/cilium-d4zqh/cilium-agent?follow=true": Service Unavailable
+
+
 # for centos 8 cat /etc/sysconfig/kubelet
 # KUBELET_EXTRA_ARGS=--node-ip=10.169.72.128
 
