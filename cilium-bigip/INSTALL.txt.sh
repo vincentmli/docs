@@ -60,15 +60,17 @@ kubectl apply -f cilium-bigip.yaml
 
 ./tunnel.sh -a add
 
-# 4. deploy cluster service nginxservice and ngnix pod
+# 4. deploy F5 hello world container, service, as3 configmap 
 
-kubectl apply -f nginx_pod_cluster_service.yaml
+kubectl apply -f f5-hello-world-deployment.yaml
+kubectl apply -f f5-hello-world-service.yaml
+kubectl apply -f f5-hello-world-http-as3-configmap.yaml
 
 # 5 deploy CIS (image: vli39/k8s-bigip-ctlr:cilium) 
 
 #create BIGIP login secret first
-
-kubectl create secret generic bigip-login --namespace kube-system --from-literal=username=admin --from-literal=password=admin
+# secret seems not needed if password specified directly in CIS deployment yaml
+#kubectl create secret generic bigip-login --namespace kube-system --from-literal=username=admin --from-literal=password=admin
 
 #deploy rbac
 
@@ -78,7 +80,6 @@ kubectl apply -f rbac.yaml
 
 kubectl apply -f cis-cilium.yaml
 
-# 6 deploy simple ingress
+#now the pod ARP and Cilium node FDB entry should automatically be populated in BIG-IP
 
-kubectl apply -f f5-ingress.yaml
 
