@@ -82,5 +82,6 @@ kubectl apply -f rbac.yaml
 kubectl apply -f cis-cilium.yaml
 
 #now the pod ARP and Cilium node FDB entry should automatically be populated in BIG-IP
+# tmsh show net arp, tmsh show net fdb
 
 
