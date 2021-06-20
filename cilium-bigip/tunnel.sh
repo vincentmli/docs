@@ -37,7 +37,11 @@ read -r SUBNET
 echo "Please input BIG-IP vlan SELF IP, for example 10.169.72.34"
 read -r SELFIP 
 
-echo "Please input BIG-IP flannel_vxlan VNI, for example 68"
+echo "Please input BIG-IP flannel_vxlan VNI
+  use value less than 65535, the script
+  is not smart enough  with value bigger than 65535
+                                                "
+
 read -r VNI 
 
 echo "Please input BIG-IP flannel_vxlan MAC, for example 00:50:56:86:6b:28"
@@ -45,17 +49,23 @@ read -r MAC
 
 fi
 
-
 # Convert values to Hex
 HEX_SUBNET=$(printf '%02x ' ${SUBNET//./ })
 HEX_SELFIP=$(printf '%02x ' ${SELFIP//./ })
-HEX_VNI=$(printf '%02x' ${VNI} | sed 's/.\{2\}/& /g')
+if [ $VNI -le 255 ]; then
+	HEX_VNI=$(printf '%02x' ${VNI})
+	HEX_VNI="$HEX_VNI 00 00 00"
+else [ \($VNI -gt 255 -a $VNI -le 65535 \) ]
+	HEX_VNI=$(printf '%02x' ${VNI} | sed 's/.\{2\}/& /g')
+	HEX_VNI="$HEX_VNI 00 00"
+fi
+
 HEX_MAC=$(echo ${MAC//:/ })
 
 
 #echo "$HEX_SUBNET"
 #echo "$HEX_SELFIP"
-#echo "$HEX_VNI"
+echo "$HEX_VNI"
 #echo "$HEX_MAC"
 
 KEY=" 00 00 00 00  00 00 00 00 00 00 00 00 01 00 00 00"
@@ -80,7 +90,7 @@ do
 	    #add BIG-IP $HEX_SUBNET self IP $HEX_SELFIP  vni $SELF_VNI vtep mac $HEX_MAC
     	    kubectl exec -it $CA -n kube-system -- bpftool map update id $tunnelid \
 	    key hex   $HEX_SUBNET $KEY \
-	    value hex $HEX_SELFIP  $HEX_VNI 00 00 00  $HEX_MAC 00 00 01 00 00 00
+	    value hex $HEX_SELFIP  $HEX_VNI $HEX_MAC 00 00 01 00 00 00
         fi
 
  	if  [ $argument == "delete" ]
