@@ -82,6 +82,31 @@ kubectl apply -f rbac.yaml
 kubectl apply -f cis-cilium.yaml
 
 #now the pod ARP and Cilium node FDB entry should automatically be populated in BIG-IP
-# tmsh show net arp, tmsh show net fdb
+[root@bigip-cilium:Active:Standalone] shared # tmsh show net arp
 
+-------------------------------------------------------------------------------------------------
+Net::Arp
+Name                    Address       HWaddress          Vlan             Expire-in-sec  Status
+-------------------------------------------------------------------------------------------------
+/Common/k8s-10.0.1.253  10.0.1.253    0a:0a:0a:a9:48:13  -                -              static
+10.169.72.9             10.169.72.9   52:54:00:19:03:15  /Common/vli-169  202            resolved
+10.169.72.19            10.169.72.19  52:54:00:82:cd:d7  /Common/vli-169  99             resolved
+
+[root@bigip-cilium:Active:Standalone] shared # tmsh show net fdb
+
+------------------------------------------------------------------
+Net::FDB
+Tunnel         Mac Address        Member                   Dynamic
+------------------------------------------------------------------
+flannel_vxlan  0a:0a:0a:a9:48:13  endpoint:10.169.72.19%0  no
+flannel_vxlan  0a:0a:0a:a9:48:09  endpoint:10.169.72.9%0   no
+flannel_vxlan  16:ab:9c:44:68:5a  endpoint:10.169.72.19    yes
+
+[root@bigip-cilium:Active:Standalone] shared # ping 10.0.1.253
+PING 10.0.1.253 (10.0.1.253) 56(84) bytes of data.
+64 bytes from 10.0.1.253: icmp_seq=1 ttl=64 time=0.935 ms
+^C
+--- 10.0.1.253 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.935/0.935/0.935/0.000 ms
 
