@@ -7,11 +7,11 @@ tmsh create net tunnels vxlan fl-vxlan port 8472 flooding-type none
 
 # 2. Create Cilium VXLAN tunnel, note VNI key 68, you should not use key 1 or key 2 as it 
 # is reserved by Cilium
-tmsh create net tunnels tunnel flannel_vxlan key 68 profile fl-vxlan local-address 10.169.72.34 
+tmsh create net tunnels tunnel flannel_vxlan key 68 profile fl-vxlan local-address 10.169.72.15
 
 # 3. Create the VXLAN tunnel self-IP, allow default service, allow none stops self ip ping.
 #    also make sure selfip subnet is /16, if /24, it may lead to unresolved pod ARP
-tmsh create net self 10.0.3.34 address 10.0.3.34/255.255.0.0 allow-service default vlan flannel_vxlan
+tmsh create net self 10.0.88.15 address 10.0.88.15/255.255.0.0 allow-service default vlan flannel_vxlan
 
 # 4. Create partition "k8s" on BIG-IP
 tmsh create auth partition k8s
@@ -66,7 +66,7 @@ kubectl apply -f f5-hello-world-deployment.yaml
 kubectl apply -f f5-hello-world-service.yaml
 kubectl apply -f f5-hello-world-http-as3-configmap.yaml
 
-# 5 deploy CIS (image: vli39/k8s-bigip-ctlr:cilium) 
+# 5 deploy CIS (image: vli39/k8s-bigip-ctlr:vtep) 
 
 #create BIGIP login secret first
 # secret seems not needed if password specified directly in CIS deployment yaml
