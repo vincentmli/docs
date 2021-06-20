@@ -77,7 +77,7 @@ kubectl apply -f f5-hello-world-http-as3-configmap.yaml
 
 kubectl apply -f rbac.yaml
 
-#deploy CIS
+#deploy CIS, change the BIG-IP admin ip, username, password in cis-cilium.yaml to match your lab
 
 kubectl apply -f cis-cilium.yaml
 
