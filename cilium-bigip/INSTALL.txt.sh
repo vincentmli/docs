@@ -28,29 +28,30 @@ Cilium:
 # which ip address for k8s node ip
 
 # for ubuntu to specify node-ip in /etc/default/kubelet
-# KUBELET_EXTRA_ARGS=--node-ip=10.169.72.128
+# KUBELET_EXTRA_ARGS=--node-ip=10.169.72.9
 # also running into problem with ubuntu when k8s apiserver ip not same as node ip
-# had to re-run kubeadm init with --apiserver-advertise-address=10.169.72.128 
+# had to re-run kubeadm init with --apiserver-advertise-address=10.169.72.9 
 # so node ip and apiserer ip to be same as workaround
 # kubectl logs -n kube-system  cilium-d4zqh  -f
 #Error from server: Get "https://10.169.72.9:10250/containerLogs/kube-system/cilium-d4zqh/cilium-agent?follow=true": Service Unavailable
 
 
 # for centos 8 cat /etc/sysconfig/kubelet
-# KUBELET_EXTRA_ARGS=--node-ip=10.169.72.128
+# KUBELET_EXTRA_ARGS=--node-ip=10.169.72.9
 
-kubeadm init --v=5 --apiserver-advertise-address=10.3.72.239 --skip-phases=addon/kube-proxy
+kubeadm init --v=5 --apiserver-advertise-address=10.3.72.9 --skip-phases=addon/kube-proxy
 
 # 2. deploy cilium (image vli39/cilium:bigip), 
 #    change following to match your network interface configured with
-#    node ip 10.169.72.128 and k8s api server ip address setting
+#    node ip 10.169.72.9 and k8s api server ip address setting
+#    change the "devices" and KUBERNETES_SERVICE_HOST to match your lab
 
 #    devices: "ens192"
 #    - name: KUBERNETES_SERVICE_HOST
-#         value: "10.3.72.239"
+#         value: "10.3.72.9"
 #
 
-#    kubectl logs <cilium pod> -n kube-system -f and see if cilium get ready, change the "devices" 
+#    kubectl exec -it  <cilium agent pod> -n kube-system -- cilium status  if cilium get ready
 
 kubectl apply -f cilium-bigip.yaml
 
