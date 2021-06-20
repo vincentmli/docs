@@ -21,12 +21,23 @@ Cilium:
 
 #if you have two network interface and two IP address, you can specify which address for k8s api
 # and which ip address for k8s node ip
-#cat /etc/default/kubelet
+# for ubuntu cat /etc/default/kubelet
+# KUBELET_EXTRA_ARGS=--node-ip=10.169.72.128
+# for centos 8 cat /etc/sysconfig/kubelet
 # KUBELET_EXTRA_ARGS=--node-ip=10.169.72.128
 
 kubeadm init --v=5 --apiserver-advertise-address=10.3.72.239 --skip-phases=addon/kube-proxy
 
-# 2. deploy cilium (image vli39/cilium:bigip), kubectl logs <cilium pod> -n kube-system -f and see if cilium get ready 
+# 2. deploy cilium (image vli39/cilium:bigip), 
+#    change following to match your network interface configured with
+#    node ip 10.169.72.128 and k8s api server ip address setting
+
+#    devices: "ens192"
+#    - name: KUBERNETES_SERVICE_HOST
+#         value: "10.3.72.239"
+#
+
+#    kubectl logs <cilium pod> -n kube-system -f and see if cilium get ready, change the "devices" 
 
 kubectl apply -f cilium-bigip.yaml
 
