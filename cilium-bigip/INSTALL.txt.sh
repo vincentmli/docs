@@ -5,8 +5,8 @@ BIG-IP:
 # 1. Create a VXLAN tunnel profile 
 tmsh create net tunnels vxlan fl-vxlan port 8472 flooding-type none
 
-# 2. Create Cilium VXLAN tunnel, note VNI key 68, you should not use key 1 or key 2 as it 
-# is reserved by Cilium
+# 2. Create Cilium VXLAN tunnel, note VNI key 68, Note key 1,2,3,4,5,6
+# is reserved by Cilium, do not use them, see cilium bpf/node_config.h
 tmsh create net tunnels tunnel flannel_vxlan key 68 profile fl-vxlan local-address 10.169.72.15
 
 # 3. Create the VXLAN tunnel self-IP, allow default service, allow none stops self ip ping.
