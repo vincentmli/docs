@@ -1,0 +1,80 @@
+diff --git a/bpf/lib/common.h b/bpf/lib/common.h
+index 3e1b11a5f..2d0710f0c 100644
+--- a/bpf/lib/common.h
++++ b/bpf/lib/common.h
+@@ -221,9 +221,8 @@ struct endpoint_key {
+ 	union {
+ 		struct {
+ 			__u32		ip4;
+-			__u32		pad1;
+-			__u32		pad2;
+-			__u32		pad3;
++			__u32		vni;
++			mac_t		dmac;
+ 		};
+ 		union v6addr	ip6;
+ 	};
+diff --git a/bpf/lib/encap.h b/bpf/lib/encap.h
+index dfd87bd82..c7b6417fd 100644
+--- a/bpf/lib/encap.h
++++ b/bpf/lib/encap.h
+@@ -134,7 +134,7 @@ __encap_with_nodeid(struct __ctx_buff *ctx, __u32 tunnel_endpoint,
+ 
+ 	cilium_dbg(ctx, DBG_ENCAP, node_id, seclabel);
+ 
+-	ret = ctx_set_tunnel_key(ctx, &key, sizeof(key), BPF_F_ZERO_CSUM_TX);
++	ret = ctx_set_tunnel_key(ctx, &key, sizeof(key), 0);
+ 	if (unlikely(ret < 0))
+ 		return DROP_WRITE_ERROR;
+ 
+@@ -187,6 +187,7 @@ encap_and_redirect_lxc(struct __ctx_buff *ctx, __u32 tunnel_endpoint,
+ 		       struct endpoint_key *key, __u32 seclabel, __u32 monitor)
+ {
+ 	struct endpoint_key *tunnel;
++	mac_t vtep_mac;
+ 
+ 	if (tunnel_endpoint) {
+ #ifdef ENABLE_IPSEC
+@@ -221,6 +222,12 @@ encap_and_redirect_lxc(struct __ctx_buff *ctx, __u32 tunnel_endpoint,
+ 						seclabel);
+ 	}
+ #endif
++	if (tunnel->vni) {
++		vtep_mac = tunnel->dmac;
++		if (vtep_mac && eth_memcpy_daddr(ctx, (__u8 *) &vtep_mac, 0) < 0)
++			return DROP_WRITE_ERROR;
++		return __encap_and_redirect_with_nodeid(ctx, tunnel->ip4, tunnel->vni, monitor);
++	}
+ 	return __encap_and_redirect_with_nodeid(ctx, tunnel->ip4, seclabel, monitor);
+ }
+ 
+diff --git a/bpf/lib/eth.h b/bpf/lib/eth.h
+index ec02ff5d3..7504c62c5 100644
+--- a/bpf/lib/eth.h
++++ b/bpf/lib/eth.h
+@@ -109,6 +109,25 @@ static __always_inline int eth_store_daddr(struct __ctx_buff *ctx,
+ #endif
+ }
+ 
++/* Copy of eth_store_daddr but skip CTX_DIRECT_WRITE_OK check
++ * to avoid failing to pass verifier
++ * see https://github.com/cilium/cilium/issues/16517
++ */
++static __always_inline int eth_memcpy_daddr(struct __ctx_buff *ctx,
++					   const __u8 *mac, int off)
++{
++	void *data_end = ctx_data_end(ctx);
++	void *data = ctx_data(ctx);
++
++	if (ctx_no_room(data + off + ETH_ALEN, data_end))
++		return -EFAULT;
++	/* Need to use builtin here since mac came potentially from
++	 * struct bpf_fib_lookup where it's not aligned on stack. :(
++	 */
++	__bpf_memcpy_builtin(data + off, mac, ETH_ALEN);
++	return 0;
++}
++
+ static __always_inline int eth_store_proto(struct __ctx_buff *ctx,
+ 					   const __u16 proto, int off)
+ {
