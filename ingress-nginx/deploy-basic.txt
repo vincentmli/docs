@@ -1,36 +1,35 @@
                           +---------------+
                           | public client |
                           +------+--------+
-                                 ^
-                                 |
-                                 v
+public network                   ^
+ 10.3.72.0./24                   |
+                                 v 10.3.72.19:(80/443)
                   +-------public interface--------+
                   |   +------------------------+  |
                   |   |ingress-nginx-controller|  |
                   |   |  hostNetwork:true      |  |
-                  |   +------------------------+  |
-                  |  +-------+         +-------+  |
+                  |   +------------------------+  |  cilim-demo-3
+                  |  +-------+         +-------+  |  pod cidr: 10.0.1.0/24
                   |  |cilium |         | banana|  |
                   |  |agent  |         +-------+  |
                   |  +-------+                    |
-                  |  cilium-demo-3                |
+                  |                               |
                   +--------node interface---------+
-                                ^
-                                | tunnel
+node network                    ^ node ip: 10.169.72.19
+ 10.169.72.0/24                 | tunnel
                                 v
              +---------------------------------------+-----+
-             |                                    tunnel   |
-             v                                             v
+             | node ip                            tunnel   | node ip
+             v 10.169.72.9                                 v  10.169.72.18
 +-------node interface------+             ++-----------node interface--+
 |                           |             |                            |
-|  +-------+                |             | +------+ +-------+         |
-|  |cilium |                |             | |apple | |cilium |         |
+|  +-------+ pod cidr       |             | +------+ +-------+         |
+|  |cilium | 10.0.0.0/24    |             | |apple | |cilium |         |
 |  |agent  |                |             | |      | |agent  |         |
 |  +-------+                |             | +------+ +-------+         |
-| cilium-demo-1 (master)    |             | cilium-demo-2              |
+|                           |             | pod cidr 10.0.2.0/24       |
 +---------------------------+             +-+--------------------------+
-
-
+  cilium-demo-1 (master)                          cilium-demo-2
 
 
 
