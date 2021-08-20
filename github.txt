@@ -48,3 +48,12 @@ $ git push --delete origin vli-PR
 
 
 https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
+
+https://stackoverflow.com/questions/15407075/how-could-i-use-git-bisect-to-find-the-first-good-commit
+
+git bisect start --term-new=fixed --term-old=unfixed
+git bisect fixed master
+git bisect unfixed $some-old-sha1
+As you test, say git bisect fixed or git bisect unfixed as appropriate.
+
+
