@@ -1,0 +1,97 @@
+#
+# https://github.com/kubernetes/community/blob/master/contributors/devel/running-locally.md
+# change kubernetes/hack/local-up-cluster.sh all 127.0.0.1 to private ip 192.168.1.1 that external k8s BIGIP can reach to
+
+# http://clouddocs.f5.com/containers/v2/kubernetes/kctlr-app-install.html
+# step 1:
+#create BIGIP login secret first
+#kubectl create secret generic bigip-login --namespace kube-system --from-literal=username=admin --from-literal=password=admin
+
+# step 2:
+# cluster/kubectl.sh apply -f following yaml
+
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bigip-ctlr-serviceaccount
+  namespace: kube-system
+
+---
+
+# for use in k8s clusters using RBAC
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: bigip-ctlr-clusterrole
+rules:
+- apiGroups:
+  - ""
+  - "extensions"
+  resources:
+  - nodes
+  - pods
+  - services
+  - endpoints
+  - namespaces
+  - ingresses
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  - "extensions"
+  resources:
+  - configmaps
+  - events
+  - ingresses/status
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - create
+  - patch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingressclasses
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - create
+  - patch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - list
+  - watch
+  - get
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses/status
+  verbs:
+  - update
+
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: bigip-ctlr-clusterrole-binding
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bigip-ctlr-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: bigip-ctlr-serviceaccount
+  namespace: kube-system
