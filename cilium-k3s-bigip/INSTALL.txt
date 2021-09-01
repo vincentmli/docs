@@ -1,0 +1,25 @@
+1, setup flannel vxlan tunnel in BIG-IP
+
+you could run bigip.sh on BIG-IP as example, but you free to use your
+own tunnel subnet range, selfip, the VNI should be 2 and flannel_vxlan has to be exact same
+
+2, run k3s-cilium.sh on your VM
+
+./k3s-cilium.sh -h
+
+Usage: ./k3s-cilium.sh
+         -n <k3s node ip>
+         -s <BIGIP tunnel subnet>
+         -i <BIGIP vlan selfip>
+         -m <BIGIP flannel_vxlan interface mac>
+         -v <BIGIP tunnel vni>
+         -h help
+
+for example:
+
+./k3s-cilium.sh -n 10.169.72.129 -s 10.0.88.0/24 -i 10.169.72.34 -m 00:50:56:a0:7d:d8 -v 2
+
+That is it!
+
+you should be able to ping pod IP from BIG-IP, and deploy your ingress/configmap
+

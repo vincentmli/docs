@@ -7,7 +7,7 @@ helpFunction()
          -n <k3s node ip>
          -s <BIGIP tunnel subnet>
          -i <BIGIP vlan selfip>
-         -m <BIGIP flannel_vxlan mac>
+         -m <BIGIP flannel_vxlan interface mac>
          -v <BIGIP tunnel vni>
          -h help 
 	 "
