@@ -9,6 +9,7 @@ helpFunction()
          -i <BIGIP vlan selfip>
          -m <BIGIP flannel_vxlan mac>
          -v <BIGIP tunnel vni>
+         -h help 
 	 "
    exit 1 # Exit script after printing help
 }
@@ -41,7 +42,8 @@ interface=$(ip addr show  | grep $nodeip | awk '{print $7;}')
 echo "Interface: $interface";
 
 #install k3s
-curl -sfL https://get.k3s.io | sh -s - --disable=traefik --no-flannel --node-ip=$nodeip
+#https://github.com/k3s-io/k3s/issues/3932
+curl -sfL https://get.k3s.io | sh -s - --disable=traefik --flannel-backend=none --node-ip=$nodeip
 
 #check if k3s.service is active
 echo "wait for k3s up..."
