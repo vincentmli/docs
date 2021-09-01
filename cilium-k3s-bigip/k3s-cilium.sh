@@ -14,7 +14,7 @@ helpFunction()
    exit 1 # Exit script after printing help
 }
 
-if [ $# -le 6  ]; then
+if [ $# -eq 0  ]; then
      helpFunction
     exit 1
 fi
@@ -43,6 +43,7 @@ echo "Interface: $interface";
 
 #install k3s
 #https://github.com/k3s-io/k3s/issues/3932
+export INSTALL_K3S_SYMLINK=force
 curl -sfL https://get.k3s.io | sh -s - --disable=traefik --flannel-backend=none --node-ip=$nodeip
 
 #check if k3s.service is active
