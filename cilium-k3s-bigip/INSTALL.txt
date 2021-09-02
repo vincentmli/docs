@@ -1,5 +1,5 @@
-1, setup flannel vxlan tunnel in BIG-IP 
-(recommend to run BIG-IP 14.1.4.2 as demo or has BIG-IP version that 
+1, setup flannel vxlan tunnel in BIG-IP
+(recommend to run BIG-IP 14.1.4.2 as demo or has BIG-IP version that
 has bug  ID 761753 or ID 826349 fixed)
 
 you could run bigip.sh on BIG-IP as example, but you free to use your
