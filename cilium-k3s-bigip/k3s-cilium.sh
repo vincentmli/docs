@@ -101,7 +101,7 @@ ok=0
 
 until [ $ok -eq 1 ]
 do
-    sleep 5
+    sleep 10 
 
     for node in $(kubectl  get no  | awk '{print $1;}' | grep -v 'NAME')
 
@@ -109,7 +109,7 @@ do
         CA=$(kubectl get -l k8s-app=cilium pods -n kube-system --field-selector spec.nodeName=$node -o jsonpath='{.items[0].metadata.name}')
 
 	echo -e "${BLUE}"
-    	kubectl exec -it $CA -n kube-system -- cilium status
+    	kubectl exec -it $CA -n kube-system -- cilium status 2>&1>>/dev/null
 
         if [ $? -eq 0 ]
         then
@@ -118,11 +118,15 @@ do
 	  echo -e "${GREEN}"
           echo "cilium agent is up" >&2
           echo " " >&2
+	  echo -e "${NC}"
           #configure cilium vxlan to BIGIP tunnel 
           #tunnel encrypt key
           key=0
+	  echo -e "${BLUE}"
           kubectl exec -it $CA -n kube-system -- cilium bpf tunnel update  $subnet \
                          $selfip $mac $vni $key
+	  echo -e "${NC}"
+	  echo -e "${GREEN}"
           kubectl exec -it $CA -n kube-system -- cilium bpf tunnel list
 	  echo -e "${NC}"
         else
@@ -146,17 +150,13 @@ kubectl apply -f cis.yaml
 kubectl apply -f f5-hello-world-deployment.yaml
 kubectl apply -f f5-hello-world-service.yaml
 
-echo -e "${GREEN}"
-kubectl get po -o wide -A 
-echo -e "${NC}"
-
 ok=0
 until [ $ok -eq 1 ]
 do
-    sleep 1 
+    sleep 10 
 
 	echo -e "${BLUE}"
-	kubectl  get po -n kube-system -l app=cis --field-selector=status.phase=Running
+	kubectl  get po -A -l app=cis --field-selector=status.phase=Running | grep 'Running' >/dev/null 2>&1 
 
         if [ $? -eq 0 ]
         then
@@ -171,6 +171,30 @@ do
 	  echo -e "${NC}"
         else
           echo -e "${RED}Wait CIS to be up${NC}" >&2
+	  ok=0
+        fi
+
+done
+
+ok=0
+until [ $ok -eq 1 ]
+do
+    sleep 1 
+
+	echo -e "${BLUE}"
+	kubectl  get po -A -l app=f5-hello-world --field-selector=status.phase=Running | grep 'Running' >/dev/null 2>&1 
+
+        if [ $? -eq 0 ]
+        then
+	  echo -e "${NC}"
+	  ok=1
+	  echo -e "${GREEN}"
+          echo "f5-hello-world pod is up" >&2
+          echo " " >&2
+	  kubectl get po -o wide -A 
+	  echo -e "${NC}"
+        else
+          echo -e "${RED}Wait f5-hello-world to be up${NC}" >&2
 	  ok=0
         fi
 
