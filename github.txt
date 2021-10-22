@@ -57,3 +57,42 @@ git bisect unfixed $some-old-sha1
 As you test, say git bisect fixed or git bisect unfixed as appropriate.
 
 
+https://stackoverflow.com/questions/6217156/break-a-previous-commit-into-multiple-commits
+https://stackoverflow.com/questions/7239333/how-do-i-commit-only-some-files
+
+A) Splitting the most recent commit
+To split apart your most recent commit, first:
+
+$ git reset HEAD~
+
+B) git commit "list of changed files that is suppose to be together in one commit"
+
+
+https://stackoverflow.com/questions/3921708/how-do-i-squash-two-non-consecutive-commits
+
+C) you may make changes later after splitting one commit into multiple commites
+
+say one commit split into 4 commites, A,B,C,D, then later you changed some files
+in commit C, and then you commited the changes into commit E, now you have
+commit A,B,C,D,E, but commit C and E is suppose to be one commit and you want to
+merge commit E into commit C
+
+$git rebase -i HEAD~5
+
+will bring you
+
+pick aaaaaaa Commit A
+pick bbbbbbb Commit B
+pick ccccccc Commit C
+pick ddddddd Commit D
+pick eeeeeee Commit E
+
+then re-arrange the order to
+below and squash E, save and
+edit the commit message
+
+pick ccccccc Commit C
+s eeeeeee Commit E
+pick aaaaaaa Commit A
+pick bbbbbbb Commit B
+pick ddddddd Commit D
