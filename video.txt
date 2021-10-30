@@ -13,6 +13,9 @@ perl -pi -e 's/^.*\r\n$//' <sub-name>.srt
    ffmpeg -i <file.mp4> -ss 600 -t 600 2-10-min.mp4
    ffmpeg -i <file.mp4> -ss 1200 -t 600 3-10-min.mp4
 
+or 
+ffmpeg -i assembly-computer-arch.mp4 -f segment -segment_time 600 -c copy out%03d.mp4
+
 
 
 
