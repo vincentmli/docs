@@ -43,7 +43,7 @@ echo "BIGIP vlan SELFIP: $selfip";
 echo "BIGIP flannel_vxlan MAC: $mac";
 echo -e "${NC}"
 
-interface=$(ip addr show  | grep $nodeip | awk '{print $7;}')
+interface=$(ip addr show  | grep $nodeip | sed  -E 's%^.*\s([a-z]*)%\1%')
 
 echo "Interface: $interface";
 
