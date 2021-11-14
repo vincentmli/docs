@@ -1,0 +1,24 @@
+
+# define guest
+
+virsh define openEuler.xml
+
+# show guest list
+
+virsh list --all
+
+# start openEuler guest
+
+virsh start openEuler
+
+# connect to openEuler guest console
+
+virsh console openEuler
+
+# login root, password: openEuler12#$
+
+# edit  /etc/yum.repos.d/openEuler.repo to correct the baseurl
+
+[EPOL]
+name=EPOL
+baseurl=http://repo.openeuler.org/openEuler-21.09/EPOL/main/$basearch/
