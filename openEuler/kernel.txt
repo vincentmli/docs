@@ -1,0 +1,37 @@
+#!/bin/bash
+#openEuler custom kernel
+
+yum install make.x86_64 gcc.x86_64 flex.x86_64 bison.x86_64 openssl-devel.x86_64 elfutils-libelf-devel ncurses-devel.x86_64 dwarves.x86_64
+
+curl -O https://repo.openeuler.org/openEuler-21.09/source/Packages/kernel-5.10.0-5.10.0.24.oe1.src.rpm
+
+rpm2cpio kernel-5.10.0-5.10.0.24.oe1.src.rpm | cpio -idmv
+
+#untar kernel tar ball and cd into kernel directory
+
+make clean
+
+cp /boot/config-5.10.0-5.10.0.24.oe1.x86_64 .config
+
+yes "" | make oldconfig
+
+
+#remove unused kernel modules
+#and manually edit .config to add CONFIG_DEBUG_INFO_BTF=y
+
+make menuconfig
+
+
+time make -j <num cores> bzImage
+
+time make -j <num cores> modules
+
+time make -j <num cores>
+
+make modules_install
+
+make install
+
+grubby --info=ALL | grep '^kernel'
+
+grubby --set-default="/boot/vmlinuz-5.10.0"
