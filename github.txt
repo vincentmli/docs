@@ -96,3 +96,16 @@ s eeeeeee Commit E
 pick aaaaaaa Commit A
 pick bbbbbbb Commit B
 pick ddddddd Commit D
+
+
+my github f5devcentral cilium master workflow
+
+git checkout master
+git fetch upstream
+git checkout vli-vxlan
+git rebase upstream/master
+...resolve conflicts...
+git push origin vli-vxlan --force
+git checkout master
+git rebase vli-vxlan
+git push origin master --force
