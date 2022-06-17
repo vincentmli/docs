@@ -1,0 +1,12 @@
+Inline Assembly Language in C code
+https://gcc.gnu.org/onlinedocs/gcc/Using-Assembly-Language-with-C.html
+
+tail_call_static:
+https://lore.kernel.org/bpf/1656a082e077552eb46642d513b4a6bde9a7dd01.1601477936.git.daniel@iogearbox.net/
+https://github.com/cilium/cilium/commit/f5537c26020d5297b70936c6b7d03a1e412a1035
+https://cilium.io/blog/2020/02/18/cilium-17#upstream-linux
+
+Retpoline: a software construct for preventing branch-target-injection
+https://support.google.com/faqs/answer/7625886
+https://github.com/gcc-mirror/gcc/commit/a31e654fa107be968b802786d747e962c2fcdb2b
+
