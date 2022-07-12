@@ -1,0 +1,81 @@
+#
+# https://github.com/kubernetes/community/blob/master/contributors/devel/running-locally.md
+# change kubernetes/hack/local-up-cluster.sh all 127.0.0.1 to private ip 192.168.1.1 that external k8s BIGIP can reach to
+
+# http://clouddocs.f5.com/containers/v2/kubernetes/kctlr-app-install.html
+# step 1:
+#create BIGIP login secret first
+#kubectl create secret generic bigip-login --namespace kube-system --from-literal=username=admin --from-literal=password=admin
+
+# step 2:
+# cluster/kubectl.sh apply -f following yaml
+
+#apiVersion: extensions/v1beta1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: cis-14
+  name: cis-14
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cis-14
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cis-14
+    spec:
+#      hostNetwork: true
+      serviceAccountName: bigip-ctlr-serviceaccount
+      containers:
+      - args:
+        - --bigip-partition
+        - k8s 
+        - --bigip-url
+        - 10.169.72.14
+        - --bigip-username
+        - admin
+        - --bigip-password
+        - testenv12 
+        - --verify-interval
+        - "30"
+        - --node-poll-interval
+        - "1"
+        - --pool-member-type
+        - cluster 
+        - --openshift-sdn-name
+          #- --flannel-name
+        - flannel_vxlan 
+        - --log-level
+        - INFO 
+        - --insecure
+        - "true"
+        - --agent
+        - as3 
+        - --log-as3-response
+        - "true"
+        command:
+        - /app/bin/k8s-bigip-ctlr
+          #image: vli39/k8s-bigip-ctlr:vtep
+          #image: f5networks/k8s-bigip-ctlr:2.4.0
+        image: f5networks/k8s-bigip-ctlr:2.8.1
+        imagePullPolicy: Always 
+        #imagePullPolicy: Never 
+        name: cis-14
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128M
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+

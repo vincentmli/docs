@@ -1,3 +1,6 @@
+x86 and amd64 instruction reference
+https://www.felixcloutier.com/x86/
+
 Inline Assembly Language in C code
 https://gcc.gnu.org/onlinedocs/gcc/Using-Assembly-Language-with-C.html
 
@@ -9,4 +12,130 @@ https://cilium.io/blog/2020/02/18/cilium-17#upstream-linux
 Retpoline: a software construct for preventing branch-target-injection
 https://support.google.com/faqs/answer/7625886
 https://github.com/gcc-mirror/gcc/commit/a31e654fa107be968b802786d747e962c2fcdb2b
+
+tracing:
+
+https://hackmd.io/@st9540808/HkvPfU7Tr
+kprobes history
+Been around since 2004 (developed by IBM)
+basic infrastructure
+
+kprobe events (act like trace event)
+Introduced in 2009 (by Masami Hiramatsu)
+Allows to create dynamic events
+Automatically check instruction boundary
+
+BPF attached to kprobes since kernel 4.1
+
+some important files
+enable kprobe: /sys/kernel/debug/tracing/events/kprobes/<event name>/enable
+register/unregister kprobe: /sys/kernel/debug/tracing/kprobe_events
+list kprobe: /sys/kernel/debug/kprobes/list
+trace ouput: /sys/kernel/debug/tracing/trace
+
+
+
+tools/lib/bpf/bpf_tracing.h
+arch/x86/include/asm/syscall_wrapper.h
+
+/*
+ * Instead of the generic __SYSCALL_DEFINEx() definition, the x86 version takes
+ * struct pt_regs *regs as the only argument of the syscall stub(s) named as:
+ * __x64_sys_*()         - 64-bit native syscall
+ * __ia32_sys_*()        - 32-bit native syscall or common compat syscall
+ * __ia32_compat_sys_*() - 32-bit compat syscall
+ * __x64_compat_sys_*()  - 64-bit X32 compat syscall
+ *
+ * The registers are decoded according to the ABI:
+ * 64-bit: RDI, RSI, RDX, R10, R8, R9
+ * 32-bit: EBX, ECX, EDX, ESI, EDI, EBP
+ */
+
+arch/x86/kernel/traps.c
+
+static bool do_int3(struct pt_regs *regs)
+{
+        int res;
+
+#ifdef CONFIG_KGDB_LOW_LEVEL_TRAP
+        if (kgdb_ll_trap(DIE_INT3, "int3", regs, 0, X86_TRAP_BP,
+                         SIGTRAP) == NOTIFY_STOP)
+                return true;
+#endif /* CONFIG_KGDB_LOW_LEVEL_TRAP */
+
+#ifdef CONFIG_KPROBES
+        if (kprobe_int3_handler(regs))
+                return true;
+#endif
+        res = notify_die(DIE_INT3, "int3", regs, 0, X86_TRAP_BP, SIGTRAP);
+
+        return res == NOTIFY_STOP;
+}
+NOKPROBE_SYMBOL(do_int3);
+
+First draft of Documentation/kprobes.txt
+https://marc.info/?l=git-commits-head&m=112327363918277&w=2
+
+
+why uprobe
+https://marc.info/?l=linux-kernel&m=114293270616532&w=2
+
+Andrew Morton ask why uprobe
+https://marc.info/?l=linux-kernel&m=114293582015473&w=2
+"
+The key thinking behind a lot of the design decisions was the
+need for a very low overhead probe mechanism that would allow thousands of
+active probes on the system and could detect any instance which hits the probe,
+including probes on shared libraries which may be loaded by lots of
+processes. Thus, (1) no forcing copy-on-write pages, (2) no forcing
+in executable pages in memory just to place a probe on them (hence
+zero overhead for probes which are very unlikely to be hit), (3) no
+restrictions on evicting a page with a probe on it from memory (4) probes
+being tracked by an (inode, offset) tuple rather than by virtual address
+so that they can be shared across all processes mapping the executable/library
+even at different virtual addresses, etc.
+"
+
+RFC - Approaches to user-space probes
+https://marc.info/?l=linux-kernel&m=114344261621050&w=2
+
+ [PATCH][take2][2/2] kprobe: kprobe-booster against 2.6.16-rc5 for
+https://marc.info/?l=linux-kernel&m=114104159911612&w=2
+
+
+ [RFC][PATCH -tip 0/9] tracing: kprobe-based event tracer
+https://marc.info/?t=123749724700002&r=1&w=2
+
+[PATCH -tip 0/6 V4] tracing: kprobe-based event tracer
+https://marc.info/?t=123869306300003&r=1&w=2
+
+
+[RFC][PROTO][PATCH -tip 0/7] kprobes: support jump optimization on
+https://marc.info/?t=123905440000002&r=1&w=2
+
+[RFD] Kprobes/Kretprobes perf support
+https://marc.info/?l=linux-kernel&m=125010441405366&w=2
+
+[RFC][ PATCH -tip v2 0/7] kprobes: Kprobes jump optimization support
+https://marc.info/?l=linux-kernel&m=124650151319233&w=2
+
+ Re: What happens to a uprobe if it links to a library within a container, and that container gets deleted?
+https://lore.kernel.org/bpf/CAEf4Bzb=-gRPao8cTj3iJs0fGaXT_F1AzYNn8A5apuHCGZJPpw@mail.gmail.com/
+
+
+commit e0e492e99b372c6990a5daca9e4683c341f1330e
+Author: Masami Hiramatsu <mhiramat@redhat.com>
+Date:   Tue Oct 27 16:42:27 2009 -0400
+
+    x86: AVX instruction set decoder support
+
+
+commit 2541517c32be2531e0da59dfd7efc1ce844644f5
+Author: Alexei Starovoitov <ast@kernel.org>
+Date:   Wed Mar 25 12:49:20 2015 -0700
+
+    tracing, perf: Implement BPF programs attached to kprobes
+
+
+
 
