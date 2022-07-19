@@ -97,6 +97,22 @@ pick aaaaaaa Commit A
 pick bbbbbbb Commit B
 pick ddddddd Commit D
 
+another example:
+https://stackoverflow.com/questions/44666991/how-can-i-rebase-3-commits-with-one-merge-of-master-into-one-commit
+
+commit 1
+commit 2
+commit 3
+
+only want to rebase and merge 1 and 3
+
+then git rebase -i HEAD~3
+
+remove commit 2 line, squash 3, pick 1
+
+pick commit 1
+s    commit 3
+
 
 my github f5devcentral cilium master workflow
 
