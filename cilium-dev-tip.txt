@@ -1,0 +1,39 @@
+after change cilium cli
+
+make -C Documentation update-cmdref
+
+to view the actual documents
+make render-docs
+
+helm
+add install/kubernetes/cilium/templates/cilium-configmap.yaml
+add install/kubernetes/cilium/values.yaml.tmpl
+add install/kubernetes/cilium/values.yaml (may not needed)
+make -C install/kubernetes
+make -C Documentation update-helm-values
+
+helm to test vtep configuraiton
+
+helm template cilium install/kubernetes/cilium --namespace kube-system --set kubeProxyReplacement=strict --set k8sServiceHost=10.3.72.239 --set k8sServicePort=6443 --set vtep.enabled=true --set vtep.endpoint="10.169.72.238 10.169.72.236" --set vtep.cidr="1.1.1.0/24 1.1.2.0/24" --set vtep.mask="255.255.255.0" --set vtep.mac="00:50:56:A0:7D:D8 00:50:56:A0:7D:D8"  > /tmp/test.yaml
+
+bpf code change
+
+make -C bpf checkpatch
+
+deepcopy
+
+make generate-k8s-api
+
+https://stackoverflow.com/questions/3921708/how-do-i-squash-two-non-consecutive-commits
+https://stackoverflow.com/questions/7239333/how-do-i-commit-only-some-files
+https://stackoverflow.com/questions/6217156/break-a-previous-commit-into-multiple-commits
+
+llvm-objdump -S /home/no-vtep.o --section="2/7"
+
+
+record packet dropped by netfilter
+perf record -g -a -e skb:kfree_skb
+
+llvm-objdump -S -r -j 2/7 -j .rodata.cst32 bpf_lxc.o
+
+cilium_dbg(ctx, DBG_GENERIC, 42, 0);
