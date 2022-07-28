@@ -8,9 +8,8 @@ make render-docs
 helm
 add install/kubernetes/cilium/templates/cilium-configmap.yaml
 add install/kubernetes/cilium/values.yaml.tmpl
-add install/kubernetes/cilium/values.yaml (may not needed)
-make -C install/kubernetes
-make -C Documentation update-helm-values
+make -C install/kubernetes (update cilium/valules.yaml, README)
+make -C Documentation (update Documentation/helm-values.rst)
 
 helm to test vtep configuraiton
 
