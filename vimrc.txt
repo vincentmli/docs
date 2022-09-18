@@ -2,7 +2,11 @@
 "after cscope -b -R, still unable to work with no
 "cscope connection error, copy this file to ~/.vimrc
 "should work
-"
+"in case error: cstag: tag not found
+"https://vi.stackexchange.com/questions/29088/cscope-e257-cstag-tag-not-found
+":help cscope-how-touse: perhaps you need :cs add cscope.out? Check :cs show – D. Ben Knoble
+
+
 if v:lang =~ "utf8$" || v:lang =~ "UTF-8$"
    set fileencodings=ucs-bom,utf-8,latin1
 endif
