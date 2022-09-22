@@ -36,3 +36,12 @@ perf record -g -a -e skb:kfree_skb
 llvm-objdump -S -r -j 2/7 -j .rodata.cst32 bpf_lxc.o
 
 cilium_dbg(ctx, DBG_GENERIC, 42, 0);
+
+
+cilium/pwru
+
+go get github.com/cilium/ebpf@v0.9.2
+go mod tidy
+go mod vendor
+go mod verify
+go commit -a
