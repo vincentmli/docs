@@ -14,7 +14,7 @@ done
 2 : menuentry 'Ubuntu, with Linux 5.4.0-137-generic' --class ubuntu
 3 : menuentry 'Ubuntu, with Linux 5.4.0-137-generic (recovery mode)'
 
-root@vli-2004:~# grep 'GRUB_DEFAULT' /etc/default/grub
+root@vli-2004:~# grep 'GRUB_DEFAULT' /etc/default/grub (select Linux 5.4.0-137-generic as default)
 GRUB_DEFAULT="1>2"
 
 root@vli-2004:~# update-grub
