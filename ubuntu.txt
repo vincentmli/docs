@@ -1,0 +1,20 @@
+https://askubuntu.com/questions/82140/how-can-i-boot-with-an-older-kernel-version
+
+root@vli-2004:~# grub-mkconfig | grep -iE "menuentry 'Ubuntu, with Linux" | awk '{print i++ " : "$1, $2, $3, $4, $5, $6, $7}'
+Sourcing file `/etc/default/grub'
+Sourcing file `/etc/default/grub.d/init-select.cfg'
+Generating grub configuration file ...
+Found linux image: /boot/vmlinuz-6.2.0-060200rc6-generic
+Found initrd image: /boot/initrd.img-6.2.0-060200rc6-generic
+Found linux image: /boot/vmlinuz-5.4.0-137-generic
+Found initrd image: /boot/initrd.img-5.4.0-137-generic
+done
+0 : menuentry 'Ubuntu, with Linux 6.2.0-060200rc6-generic' --class ubuntu
+1 : menuentry 'Ubuntu, with Linux 6.2.0-060200rc6-generic (recovery mode)'
+2 : menuentry 'Ubuntu, with Linux 5.4.0-137-generic' --class ubuntu
+3 : menuentry 'Ubuntu, with Linux 5.4.0-137-generic (recovery mode)'
+
+root@vli-2004:~# grep 'GRUB_DEFAULT' /etc/default/grub
+GRUB_DEFAULT="1>2"
+
+root@vli-2004:~# update-grub
