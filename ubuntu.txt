@@ -18,3 +18,17 @@ root@vli-2004:~# grep 'GRUB_DEFAULT' /etc/default/grub
 GRUB_DEFAULT="1>2"
 
 root@vli-2004:~# update-grub
+
+root@vli-2004:~# grub-mkconfig displays:
+
+menuentry 'Ubuntu' --class ubuntu --class gnu-linux --class gnu --class os $menuentry_id_option 'gnulinux-simple-05cb00ef-0d7e-41b8-
+
+submenu 'Advanced options for Ubuntu' $menuentry_id_option 
+	
+  menuentry 'Ubuntu, with Linux 6.2.0-060200rc6-generic'
+  
+  menuentry 'Ubuntu, with Linux 6.2.0-060200rc6-generic (recovery mode)' --class ubuntu --class gnu-linux --class gnu --class os
+  
+  menuentry 'Ubuntu, with Linux 5.4.0-137-generic' 
+  
+  menuentry 'Ubuntu, with Linux 5.4.0-137-generic (recovery mode)'
