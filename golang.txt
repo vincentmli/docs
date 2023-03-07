@@ -1,0 +1,4 @@
+start go module at current project directory
+
+go mod init
+go mod tidy
