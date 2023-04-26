@@ -57,6 +57,11 @@ echo "===================================="
 
 echo -e "${BLUE}"
 curl -sfL https://get.k3s.io | sh -s - --disable=traefik --flannel-backend=none --node-ip=$nodeip
+
+#have k3s allocate podCIDR from k8s, with cilium set ipam.mode=kubernetes, so pod will get ip from k8s allocated podCIDR
+#curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--node-ip=10.169.72.187 --disable-kube-proxy --flannel-backend=none \ 
+--disable-network-policy --kube-controller-manager-arg=allocate-node-cidrs=true' sh -
+#cilium install --version=v1.13.0 --kube-proxy-replacement strict --helm-set-string=k8sServiceHost=10.169.72.187,k8sServicePort=6443,ipam.mode=kubernetes,l7Proxy=false
 echo -e "${NC}"
 
 #check if k3s.service is active
