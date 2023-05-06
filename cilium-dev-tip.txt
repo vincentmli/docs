@@ -45,3 +45,6 @@ go mod tidy
 go mod vendor
 go mod verify
 go commit -a
+
+
+bpf_printk("data: %llu, data_end: %llu",data, data_end);
