@@ -136,6 +136,10 @@ Date:   Wed Mar 25 12:49:20 2015 -0700
 
     tracing, perf: Implement BPF programs attached to kprobes
 
+root@r220:~# echo "push r13" | as -o /dev/null -al -msyntax=intel -mnaked-reg
+GAS LISTING  			page 1
 
+
+   1 0000 4155     	push r13
 
 
