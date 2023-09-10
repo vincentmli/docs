@@ -211,4 +211,55 @@ text poke type: 1
     entry_SYSCALL_64_after_hwframe+114
 ]: 1
 
+root@r220:/usr/src/bpf-next# bpftrace -e 'kprobe:bpf_tracing_prog_attach { printf("prog: %s attached to: %s\n",  ((struct bpf_prog *)arg0)->aux->name, ((struct bpf_prog *)arg0)->aux->dst_prog->aux->name);  @[kstack] = count(); }'
+Attaching 1 probe...
+
+
+
+prog: xdp_pass attached to: xdp_pass
+prog: xdp_pass attached to: xdp_dispatcher
+^C
+
+@[
+    bpf_tracing_prog_attach+1
+    __sys_bpf+353
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
+@[
+    bpf_tracing_prog_attach+1
+    __sys_bpf+1943
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
+
+
+root@r220:/usr/src/bpf-next# bpftrace -e 'kprobe:bpf_tracing_prog_attach { printf("prog: %s\n target prog: %s\n stack depth: %d\n",  ((struct bpf_prog *)arg0)->aux->name, ((struct bpf_prog *)arg0)->aux->dst_prog->aux->name, ((struct bpf_prog *)arg0)->aux->stack_depth);  @[kstack] = count(); }'
+Attaching 1 probe...
+
+
+prog: xdp_pass
+ target prog: xdp_pass
+ stack depth: 0
+prog: xdp_pass
+ target prog: xdp_dispatcher
+ stack depth: 0
+^C
+
+@[
+    bpf_tracing_prog_attach+1
+    __sys_bpf+1943
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
+@[
+    bpf_tracing_prog_attach+1
+    __sys_bpf+353
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
 
