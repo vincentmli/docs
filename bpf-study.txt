@@ -142,4 +142,73 @@ GAS LISTING  			page 1
 
    1 0000 4155     	push r13
 
+root@r220:/usr/src/bpf-next# bpftrace -e 'kprobe:bpf_tracing_prog_attach { printf("opening: %s\n",  ((struct bpf_prog *)arg0)->aux->name);  @[kstack] = count(); }'
+Attaching 1 probe...
+opening: xdp_pass
+opening: xdp_pass
+opening: xdp_pass
+^C
+
+@[
+    bpf_tracing_prog_attach+1
+    __sys_bpf+353
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
+@[
+    bpf_tracing_prog_attach+1
+    __sys_bpf+1943
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 2
+
+
+
+root@r220:/usr/src/bpf-next# bpftrace -e 'kprobe:__bpf_arch_text_poke { printf("text poke type: %d\n", arg1); @[kstack] = count(); }'
+
+Attaching 1 probe...
+
+
+
+text poke type: 1
+text poke type: 1
+text poke type: 1
+^C
+
+@[
+    __bpf_arch_text_poke+1
+    bpf_trampoline_unlink_prog+266
+    bpf_tracing_link_release+22
+    bpf_link_free+85
+    bpf_link_put_deferred+18
+    process_one_work+543
+    worker_thread+80
+    kthread+238
+    ret_from_fork+44
+]: 1
+@[
+    __bpf_arch_text_poke+1
+    __bpf_trampoline_link_prog+428
+    bpf_trampoline_link_prog+44
+    bpf_tracing_prog_attach+978
+    bpf_raw_tp_link_attach+429
+    __sys_bpf+353
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
+@[
+    __bpf_arch_text_poke+1
+    __bpf_trampoline_link_prog+428
+    bpf_trampoline_link_prog+44
+    bpf_tracing_prog_attach+978
+    link_create+216
+    __sys_bpf+1943
+    __x64_sys_bpf+26
+    do_syscall_64+92
+    entry_SYSCALL_64_after_hwframe+114
+]: 1
+
 
