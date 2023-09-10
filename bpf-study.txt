@@ -246,7 +246,7 @@ prog: xdp_pass
 prog: xdp_pass
  target prog: xdp_dispatcher
  stack depth: 0
-^C
+
 
 @[
     bpf_tracing_prog_attach+1
