@@ -1,0 +1,54 @@
+     libxdp user space
+
+| lib/libxdp/libxdp.c
++-struct xdp_program {
+|       /* one of prog or prog_fd should be set */
+|       struct bpf_program *bpf_prog;
+|       struct bpf_object *bpf_obj;
+|       struct btf *btf;
+|       enum bpf_prog_type prog_type;
+|       int prog_fd;
+|       int link_fd;
+|       char *prog_name;
+|       char *attach_name;
+|       __u32 prog_id;
+|       unsigned int run_prio;
+|       unsigned int chain_call_actions; /* bitmap */
+|       /* for building list of attached programs to multiprog */
+|       struct xdp_program *next;
+|  };
+|
++-struct xdp_multiprog {
+|       struct xdp_dispatcher_config config;
+|       struct xdp_program *main_prog;  /* dispatcher or legacy prog pointer */
+|       struct xdp_program *first_prog; /* uses xdp_program->next to build a list */
+|
++----xdp_program__attach(struct xdp_program *prog, int ifindex,...)
+|    |
+     +--xdp_program__attach_multi(&prog, num_progs, ifindex,...)
+           |
+           +--xdp_multiprog__generate(progs, num_progs, ifindex, old_mp,...)
+                +-dispatcher = __xdp_program__find_file("xdp-dispatcher.o",...
+                +-mp->main_prog = dispatcher;
+                +-xdp_multiprog__load(mp);
+                | +-xdp_program__load(mp->main_prog)
+                |
+                +-xdp_multiprog__link_prog(mp, new_progs[i]);
+                +-----btf_id = find_prog_btf_id(attach_func, mp->main_prog->prog_fd);
+                +-----bpf_program__set_attach_target(prog->bpf_prog, mp->main_prog->prog_fd, attach_func);
+                +-----bpf_program__set_type(prog->bpf_prog, BPF_PROG_TYPE_EXT); // BPF_PROG_TYPE_EXT
+                +-----bpf_program__set_expected_attach_type(prog->bpf_prog, 0); // 0 
+                +-----xdp_program__load(prog);
+                +-----new_prog = xdp_program__clone(prog, 0);
+                +-----opts.target_btf_id = btf_id;
+                +-----lfd = bpf_link_create(new_prog->prog_fd, mp->main_prog->prog_fd, 0, &opts);
+                      if (lfd < 0) {
+                          lfd = bpf_raw_tracepoint_open(NULL, new_prog->prog_fd);
+                      }
+
+| lib/libbpf/src/bpf.c
++---int bpf_link_create(int prog_fd, int target_fd,
+|            enum bpf_attach_type attach_type,
+|            const struct bpf_link_create_opts *opts)
+|        ...SNIP...
++-------- fd = sys_bpf_fd(BPF_LINK_CREATE, &attr, attr_sz); //bpf syscall with BPF_LINK_CREATE command
