@@ -1,0 +1,56 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * include/linux/bpf.h
+ * struct bpf_ksym {
+ *       unsigned long            start;
+ *       unsigned long            end;
+ *       char                     name[KSYM_NAME_LEN]; #<---print out the name
+ *  ...SNIP...
+ *  };              
+ *
+ * struct bpf_tramp_image {
+ *       void *image;
+ *       struct bpf_ksym ksym;
+ *       struct percpu_ref pcref;
+ *       void *ip_after_call;
+ *       void *ip_epilogue;
+ *  ....SNIP...
+ *  };
+ *
+ * arch/x86/net/bpf_jit_com.c 
+ * int arch_prepare_bpf_trampoline(struct bpf_tramp_image *im, void *image, void *image_end,
+ *                               const struct btf_func_model *m, u32 flags,
+ *                               struct bpf_tramp_links *tlinks,
+ *                               void *func_addr);
+ * 
+ * 
+ */
+
+struct my_bpf_prog_aux {
+	char name[64];
+};
+
+struct my_bpf_prog {     
+	struct my_bpf_prog_aux     *aux; 
+};
+
+struct my_bpf_tramp_link {
+        struct my_bpf_prog *prog;
+};
+
+BEGIN //BEGIN requires bpftrace-dbgsym package from ubuntu 22.04
+{
+	printf("Tracing trampoline. Hit Ctrl-C to end.\n");
+}
+
+kprobe:bpf_trampoline_link_prog
+{
+
+$l = (struct my_bpf_tramp_link *)arg0;
+
+$name = $l->prog->aux->name;
+
+printf("prog name: %s\n", $name);
+
+}

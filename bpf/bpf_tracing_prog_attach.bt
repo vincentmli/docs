@@ -1,0 +1,31 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * run bpftrace -l to find the function allowed by kprobe
+ * kernel/bpf/syscall.c has
+ * static int bpf_tracing_prog_attach(struct bpf_prog *prog,
+ *                                  int tgt_prog_fd,
+ *                                  u32 btf_id,
+ *                                  u64 bpf_cookie)
+ *
+ */
+
+BEGIN
+{
+        printf("Tracing libxdp multi XDP program attach. Hit Ctrl-C to end.\n");
+}
+
+kprobe:bpf_tracing_prog_attach
+{
+
+$p = (struct bpf_prog *)arg0;
+
+$prog_name = $p->aux->name;
+$target_name = $p->aux->dst_prog->aux->name;
+$target_id = $p->aux->dst_prog->aux->id;
+$prog_dst_tramp_key = $p->aux->dst_trampoline->key;
+
+printf("prog: %s\n target prog: %s\n target prog id: %d\n destination trampoline: %d\n\n",
+         $prog_name, $target_name, $target_id, $prog_dst_tramp_key);
+}
+~                                                                  
