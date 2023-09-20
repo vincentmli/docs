@@ -178,3 +178,40 @@ kernel space
 +----}
 
 
+
+AF_XDP
+
+| lib/libxdp/xsk.c
+|
++---xsk_socket__create(struct xsk_socket **xsk_ptr, const char *ifname,...)
+|
++------xsk_socket__create_shared(xsk_ptr, ifname, queue_id, umem,...)
+|
++---------__xsk_setup_xdp_prog(xsk, NULL); //Added by libxdp
++-------------const char *fallback_prog = "xsk_def_xdp_prog_5.3.o";
++-------------const char *default_prog = "xsk_def_xdp_prog.o"; // prog attached to dispatcher
+|
++-------------xdp_program__attach(ctx->xdp_prog, ctx->ifindex,...)
+|
+
+
+Interface        Prio  Program name      Mode     ID   Tag               Chain actions
+--------------------------------------------------------------------------------------
+eno2                   xdp_dispatcher    native   739  90f686eb86991928
+ =>              20     xsk_def_prog              748  8f9c40757cb0a6a2  XDP_PASS
+
+
+root@r210:/usr/src/bpf-next/tools/bpf/bpftool# bpftool p d j i 739
+int xdp_dispatcher(struct xdp_md * ctx):
+bpf_prog_17d608957d1f805a_xdp_dispatcher:
+; int xdp_dispatcher(struct xdp_md *ctx)
+   0:	jmp    0x00000000000020cc <===========JUMP
+   5:	xchg   %ax,%ax
+   7:	push   %rbp
+   8:	mov    %rsp,%rbp
+   b:	push   %rbx
+   c:	push   %r13
+   e:	push   %r14
+  10:	mov    %rdi,%rbx
+  13:	mov    $0x2,%eax
+
