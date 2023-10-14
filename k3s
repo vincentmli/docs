@@ -1,0 +1,3 @@
+add k3s agent
+
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent --node-ip=10.6.6.8 --flannel-iface=ens9"  K3S_URL=https://10.6.6.6:6443 K3S_TOKEN="node_token"   sh -
