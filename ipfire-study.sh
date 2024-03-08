@@ -278,3 +278,13 @@ ON,			$fwdfwsettings{'LIMIT_CON_CON'}		32
 ON,			$fwdfwsettings{'RATE_LIMIT'}		34
 10,			$fwdfwsettings{'ratecon'}		35
 second			$fwdfwsettings{'RATETIME'}		36
+
+
+
+when make changes to html/cgi-bin/*.cgi and delete log/web-user-interface to
+rebuild web-user-interface, it could result in web-user-interface error
+
+https://bugzilla.ipfire.org/show_bug.cgi?id=13625
+
+so the workaround is to remove chmod -R 644 /srv/web/ipfire/html in
+lfs/web-user-interface
