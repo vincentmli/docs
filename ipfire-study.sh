@@ -1,3 +1,6 @@
+if added new item in en.pl and do quick test in running instance, remember to add it to cache
+
+perl -e "require '/var/ipfire/lang.pl'; &Lang::BuildCacheLang"
 
 
 Perl cgi code path for  iptables rules to be saved from web ui and inserted into ipfire host
