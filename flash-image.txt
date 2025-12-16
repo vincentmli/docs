@@ -22,3 +22,22 @@ Partition table entries are not in disk order.
 
 where Offset = 33280 × 512 = 17039360
 
+LoongFire/IPFire flash image
+
+[root@fedora tmp]# kpartx -av ipfire-2.29-core190-loongarch64.img 
+add map loop0p1 (253:0): 0 1040384 linear 7:0 8192
+add map loop0p2 (253:1): 0 65536 linear 7:0 1048576
+add map loop0p3 (253:2): 0 8388608 linear 7:0 1114112
+
+[root@fedora tmp]# ls -l /dev/mapper/
+total 0
+crw------- 1 root root 10, 236 Dec 10 13:14 control
+lrwxrwxrwx 1 root root       7 Dec 16 11:20 loop0p1 -> ../dm-0
+lrwxrwxrwx 1 root root       7 Dec 16 11:20 loop0p2 -> ../dm-1
+lrwxrwxrwx 1 root root       7 Dec 16 11:20 loop0p3 -> ../dm-2
+
+mount /dev/mapper/loop0p2 /mnt/loongfire_root
+
+umount /mnt/loongfire_root
+
+kpartx -dv ipfire-2.29-core190-loongarch64.img 
