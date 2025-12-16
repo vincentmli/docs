@@ -1,0 +1,24 @@
+OpenWRT flash image 
+
+[root@fedora tmp]# fdisk -l /tmp/openwrt-loongarch64-generic-generic-ext4-combined-efi.img 
+GPT PMBR size mismatch (508448 != 508478) will be corrected by write.
+The backup GPT table is corrupt, but the primary appears OK, so that will be used.
+The backup GPT table is not on the end of the device.
+Disk /tmp/openwrt-loongarch64-generic-generic-ext4-combined-efi.img: 248.28 MiB, 260341248 bytes, 508479 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: gpt
+Disk identifier: DF0CEB95-5DE9-DFE8-3EF7-4C31A5C66300
+
+Device                                                            Start    End Sectors  Size Type
+/tmp/openwrt-loongarch64-generic-generic-ext4-combined-efi.img1     512  33279   32768   16M EFI System
+/tmp/openwrt-loongarch64-generic-generic-ext4-combined-efi.img2   33280 508415  475136  232M Linux filesystem
+/tmp/openwrt-loongarch64-generic-generic-ext4-combined-efi.img128    34    511     478  239K BIOS boot
+
+Partition table entries are not in disk order.
+
+[root@fedora tmp]#  mount -o loop,offset=17039360 /tmp/openwrt-loongarch64-generic-generic-ext4-combined-efi.img /mnt/openwrt_root
+
+where Offset = 33280 × 512 = 17039360
+
